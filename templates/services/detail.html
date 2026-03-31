@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}{{ service.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <a href="{% url 'services:list' %}"
+       class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-xl font-bold text-gray-900 truncate">{{ service.name }}</h1>
+        {% if service.is_active %}
+        <span class="badge-green">Actif</span>
+        {% else %}
+        <span class="badge-gray">Archivé</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Info card -->
+  <div class="card space-y-4">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Informations</h2>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <p class="text-xs text-gray-400">Prix</p>
+        <p class="text-lg font-bold text-brand-600 mt-0.5">{{ service.price|floatformat:0 }} FCFA</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-400">Renouvellement</p>
+        <div class="mt-1">
+          {% if service.has_renewal %}
+          <span class="badge-blue">{{ service.renewal_delay_display }}</span>
+          {% else %}
+          <span class="badge-gray">Ponctuel</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% if service.description %}
+    <div>
+      <p class="text-xs text-gray-400">Description</p>
+      <p class="text-sm text-gray-700 mt-1">{{ service.description }}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Upcoming executions -->
+  {% if upcoming %}
+  <div class="card space-y-3">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+      Prochaines interventions
+      <span class="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-bold">{{ upcoming.count }}</span>
+    </h2>
+    <div class="space-y-2">
+      {% for ex in upcoming %}
+      <div class="flex items-center gap-3 rounded-lg border {% if ex.is_overdue %}border-red-200 bg-red-50{% elif ex.next_due_date == today %}border-yellow-200 bg-yellow-50{% else %}border-blue-100 bg-blue-50{% endif %} px-3 py-2.5">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold
+          {% if ex.is_overdue %}text-red-600{% elif ex.next_due_date == today %}text-yellow-600{% else %}text-blue-600{% endif %}
+          border {% if ex.is_overdue %}border-red-200{% elif ex.next_due_date == today %}border-yellow-200{% else %}border-blue-200{% endif %}">
+          {{ ex.client.name|first|upper }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <a href="{% url 'clients:detail' ex.client.pk %}" class="text-sm font-semibold text-gray-900 hover:text-brand-600 transition-colors">
+            {{ ex.client.name }}
+          </a>
+          <p class="text-xs mt-0.5 {% if ex.is_overdue %}text-red-600{% elif ex.next_due_date == today %}text-yellow-600{% else %}text-blue-500{% endif %}">
+            {% if ex.is_overdue %}
+            En retard — prévu le {{ ex.next_due_date|date:"d/m/Y" }}
+            {% elif ex.next_due_date == today %}
+            Aujourd'hui
+            {% else %}
+            Le {{ ex.next_due_date|date:"d/m/Y" }}
+            {% if ex.days_until_due is not None %}— dans {{ ex.days_until_due }} jour{{ ex.days_until_due|pluralize }}{% endif %}
+            {% endif %}
+          </p>
+        </div>
+        <div class="shrink-0">
+          {% if ex.is_overdue %}
+          <span class="badge-red">En retard</span>
+          {% elif ex.next_due_date == today %}
+          <span class="badge-yellow">Aujourd'hui</span>
+          {% else %}
+          <span class="badge-blue">À venir</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{% url 'services:execution_complete' ex.pk %}" class="shrink-0">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button type="submit"
+                  class="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-gray-200 text-green-600 hover:bg-green-50 hover:border-green-300 transition-colors"
+                  title="Marquer comme effectuée">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Execution history -->
+  {% if executions %}
+  <div class="card space-y-3">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Historique des interventions</h2>
+    <div class="divide-y divide-gray-100">
+      {% for ex in executions %}
+      <div class="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-600">
+          {% if ex.client %}{{ ex.client.name|first|upper }}{% else %}?{% endif %}
+        </div>
+        <div class="flex-1 min-w-0">
+          {% if ex.client %}
+          <a href="{% url 'clients:detail' ex.client.pk %}" class="text-sm font-medium text-gray-900 hover:text-brand-600 transition-colors">
+            {{ ex.client.name }}
+          </a>
+          {% else %}
+          <span class="text-sm font-medium text-gray-500 italic">Client anonyme</span>
+          {% endif %}
+          <p class="text-xs text-gray-400 mt-0.5">{{ ex.execution_date|date:"d/m/Y" }}</p>
+        </div>
+        {% if ex.sale_item %}
+        <span class="text-sm font-semibold text-gray-700 shrink-0">{{ ex.sale_item.unit_price|floatformat:0 }} FCFA</span>
+        {% endif %}
+        {% if ex.is_completed %}
+        <span class="badge-green shrink-0">Effectué</span>
+        {% else %}
+        <span class="badge-yellow shrink-0">Planifié</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Staff actions -->
+  {% if is_staff %}
+  <div class="flex gap-3 flex-wrap pt-2 pb-6">
+    <a href="{% url 'services:edit' service.pk %}" class="btn-secondary flex-1 sm:flex-none justify-center">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125"/>
+      </svg>
+      Modifier
+    </a>
+    {% if service.is_active %}
+    <form method="post" action="{% url 'services:delete' service.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn-danger"
+              onclick="return confirm('Archiver cette prestation ?')">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0-3-3m3 3 3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+        </svg>
+        Archiver
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Bash(python \"D:/Professionnel/aqua_togo_manager/manage.py\" check --deploy)",
+      "Bash(python \"D:/Professionnel/aqua_togo_manager/manage.py\" check)",
+      "Bash(python manage.py check)"
+    ]
+  }
+}

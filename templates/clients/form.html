@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto space-y-5">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    {% if client %}
+    <a href="{% url 'clients:detail' client.pk %}"
+    {% else %}
+    <a href="{% url 'clients:list' %}"
+    {% endif %}
+       class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <h1 class="text-xl font-bold text-gray-900">{{ title }}</h1>
+  </div>
+
+  <form method="post" x-data="{ loading: false }" @submit="loading = true" novalidate>
+    {% csrf_token %}
+
+    <!-- Identité -->
+    <div class="card space-y-4 mb-4">
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Identité</h2>
+
+      <div>
+        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          {{ form.name.label }} <span class="text-red-500">*</span>
+        </label>
+        {{ form.name }}
+        {% if form.name.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ form.name.errors.0 }}</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="{{ form.phone.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          {{ form.phone.label }}
+        </label>
+        {{ form.phone }}
+        {% if form.phone.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ form.phone.errors.0 }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="card space-y-4 mb-5">
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Notes</h2>
+      <div>
+        <label for="{{ form.notes.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          {{ form.notes.label }}
+        </label>
+        {{ form.notes }}
+        {% if form.notes.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ form.notes.errors.0 }}</p>
+        {% endif %}
+        <p class="mt-1 text-xs text-gray-400">Informations utiles : préférences, localisation, contexte.</p>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <button type="submit" class="btn-primary w-full justify-center py-3" :disabled="loading">
+      <svg x-show="loading" class="spinner-sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+      <span x-show="!loading">{{ submit_label }}</span>
+      <span x-show="loading">Enregistrement…</span>
+    </button>
+
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Clients{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Clients</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Gérez votre portefeuille clients</p>
+    </div>
+    <a href="{% url 'clients:create' %}" class="btn-primary shrink-0">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+      Nouveau client
+    </a>
+  </div>
+
+  <!-- Stats chips -->
+  <div class="flex gap-2 flex-wrap">
+    <span class="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"/>
+      </svg>
+      {{ total_count }} client{{ total_count|pluralize }}
+    </span>
+    {% if debtors_count > 0 %}
+    <span class="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+      </svg>
+      {{ debtors_count }} débiteur{{ debtors_count|pluralize }}
+    </span>
+    {% endif %}
+  </div>
+
+  <!-- Search + Filter -->
+  <div class="space-y-3">
+    <form method="get" action="">
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/>
+        </svg>
+        <input type="text"
+               name="q"
+               value="{{ q }}"
+               placeholder="Rechercher par nom ou téléphone…"
+               class="w-full rounded-lg border border-gray-300 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+               autocomplete="off">
+        {% if filtre != 'all' %}
+        <input type="hidden" name="filtre" value="{{ filtre }}">
+        {% endif %}
+      </div>
+    </form>
+
+    <!-- Filter pills -->
+    <div class="flex gap-2">
+      <a href="?{% if q %}q={{ q }}&{% endif %}filtre=all"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if filtre == 'all' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Tous
+      </a>
+      <a href="?{% if q %}q={{ q }}&{% endif %}filtre=debtors"
+         class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if filtre == 'debtors' %}bg-red-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Débiteurs
+        {% if debtors_count > 0 %}
+        <span class="inline-flex h-4 w-4 items-center justify-center rounded-full
+          {% if filtre == 'debtors' %}bg-red-500 text-white{% else %}bg-red-100 text-red-700{% endif %}
+          text-xs font-bold">{{ debtors_count }}</span>
+        {% endif %}
+      </a>
+    </div>
+  </div>
+
+  <!-- Client list -->
+  {% if clients %}
+  <div class="space-y-2">
+    {% for client in clients %}
+    {% with balance=client.ann_balance %}
+    <a href="{% url 'clients:detail' client.pk %}"
+       class="card flex items-center gap-3 hover:shadow-md transition-shadow no-underline group
+         {% if balance and balance > 0 %}bg-red-50/40 border border-red-100{% endif %}">
+
+      <!-- Initials -->
+      {% with initials=client.name|slice:":1"|upper %}
+      {% with color_index=client.pk|stringformat:"d" %}
+      <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold
+        {% if balance and balance > 0 %}bg-red-100 text-red-700{% else %}bg-brand-100 text-brand-700{% endif %}">
+        {{ client.name|first|upper }}
+      </div>
+      {% endwith %}
+      {% endwith %}
+
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-gray-900 truncate">{{ client.name }}</p>
+        {% if client.phone %}
+        <p class="text-xs text-gray-400 mt-0.5">{{ client.phone }}</p>
+        {% endif %}
+        <p class="text-xs text-gray-400 mt-0.5">
+          Total dépensé : <span class="font-medium text-gray-600">{{ client.ann_total|floatformat:0 }} FCFA</span>
+        </p>
+      </div>
+
+      <div class="flex flex-col items-end gap-1 shrink-0">
+        {% if balance and balance > 0 %}
+        <span class="badge-red text-xs">{{ balance|floatformat:0 }} FCFA dû</span>
+        {% endif %}
+        <svg class="h-5 w-5 text-gray-300 group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+        </svg>
+      </div>
+    </a>
+    {% endwith %}
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="card text-center py-12">
+    <div class="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-gray-100 mb-4">
+      <svg class="h-7 w-7 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"/>
+      </svg>
+    </div>
+    {% if q %}
+    <h3 class="text-base font-semibold text-gray-900">Aucun résultat</h3>
+    <p class="text-sm text-gray-500 mt-1">Aucun client trouvé pour « {{ q }} ».</p>
+    <div class="mt-4">
+      <a href="{% url 'clients:list' %}" class="btn-secondary">Effacer la recherche</a>
+    </div>
+    {% elif filtre == 'debtors' %}
+    <h3 class="text-base font-semibold text-gray-900">Aucun débiteur</h3>
+    <p class="text-sm text-gray-500 mt-1">Tous vos clients sont à jour dans leurs paiements.</p>
+    {% else %}
+    <h3 class="text-base font-semibold text-gray-900">Aucun client</h3>
+    <p class="text-sm text-gray-500 mt-1">Commencez par ajouter votre premier client.</p>
+    <div class="mt-4">
+      <a href="{% url 'clients:create' %}" class="btn-primary">Ajouter un client</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

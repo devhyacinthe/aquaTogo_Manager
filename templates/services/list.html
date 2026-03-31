@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Prestations{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Prestations</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Services proposés à vos clients</p>
+    </div>
+    {% if is_staff %}
+    <a href="{% url 'services:create' %}" class="btn-primary shrink-0">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+      Nouveau service
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Stats chips -->
+  <div class="flex gap-2 flex-wrap">
+    <span class="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655"/>
+      </svg>
+      {{ services.count }} prestation{{ services.count|pluralize }} active{{ services.count|pluralize }}
+    </span>
+    {% if upcoming_count > 0 %}
+    <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"/>
+      </svg>
+      {{ upcoming_count }} à planifier
+    </span>
+    {% endif %}
+  </div>
+
+  <!-- Upcoming banner -->
+  {% if upcoming_count > 0 %}
+  <a href="{% url 'services:execution_list' %}"
+     class="card flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 transition-colors no-underline">
+    <div class="flex items-center gap-3">
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100">
+        <svg class="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm font-semibold">{{ upcoming_count }} prochaine{{ upcoming_count|pluralize }} prestation{{ upcoming_count|pluralize }} à planifier</p>
+        <p class="text-xs text-amber-600 mt-0.5">Cliquer pour voir les détails →</p>
+      </div>
+    </div>
+    <svg class="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+    </svg>
+  </a>
+  {% endif %}
+
+  <!-- Service list -->
+  {% if services %}
+  <div class="space-y-2">
+    {% for service in services %}
+    <a href="{% url 'services:detail' service.pk %}"
+       class="card flex items-center gap-3 hover:shadow-md transition-shadow no-underline group">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100">
+        <svg class="h-5 w-5 text-brand-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655"/>
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-gray-900 truncate">{{ service.name }}</span>
+          {% if service.has_renewal %}
+          <span class="badge-blue shrink-0">{{ service.renewal_delay_display }}</span>
+          {% else %}
+          <span class="badge-gray shrink-0">Ponctuel</span>
+          {% endif %}
+        </div>
+        <p class="text-sm font-medium text-brand-600 mt-0.5">{{ service.price|floatformat:0 }} FCFA</p>
+        {% if service.execution_count %}
+        <p class="text-xs text-gray-400 mt-0.5">{{ service.execution_count }} exécution{{ service.execution_count|pluralize }}</p>
+        {% endif %}
+      </div>
+      <svg class="h-5 w-5 shrink-0 text-gray-300 group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+      </svg>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="card text-center py-12">
+    <div class="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-gray-100 mb-4">
+      <svg class="h-7 w-7 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655"/>
+      </svg>
+    </div>
+    <h3 class="text-base font-semibold text-gray-900">Aucune prestation</h3>
+    <p class="text-sm text-gray-500 mt-1">Commencez par ajouter un service proposé à vos clients.</p>
+    {% if is_staff %}
+    <div class="mt-4">
+      <a href="{% url 'services:create' %}" class="btn-primary">Créer une prestation</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

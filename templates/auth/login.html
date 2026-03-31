@@ -1,0 +1,109 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Connexion — AquaTogo</title>
+  <link rel="stylesheet" href="{% static 'css/output.css' %}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+
+<body class="h-full bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 flex flex-col items-center justify-center px-4 py-12">
+
+  <!-- Carte login -->
+  <div class="w-full max-w-sm">
+
+    <!-- Logo + titre -->
+    <div class="flex flex-col items-center mb-8">
+      <img
+        src="{% static 'img/logo.png' %}"
+        alt="AquaTogo"
+        class="h-28 w-28 object-contain mb-3"
+      />
+      <h1 class="text-2xl font-bold text-gray-900 tracking-tight">AquaTogo</h1>
+      <p class="mt-1 text-sm text-gray-500">Espace de gestion interne</p>
+    </div>
+
+    <!-- Messages d'erreur -->
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+      {% for message in messages %}
+      <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Formulaire -->
+    <div class="bg-white rounded-2xl shadow-md border border-gray-100 px-6 py-8">
+      <h2 class="text-lg font-semibold text-gray-800 mb-6 text-center">Se connecter</h2>
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        <!-- Identifiant -->
+        <div class="mb-4">
+          <label for="id_username" class="block text-sm font-medium text-gray-700 mb-1.5">
+            Identifiant
+          </label>
+          <input
+            type="text"
+            name="username"
+            id="id_username"
+            autocomplete="username"
+            autofocus
+            required
+            placeholder="Votre identifiant"
+            class="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-base
+                   text-gray-900 placeholder-gray-400
+                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                   transition-colors"
+          />
+        </div>
+
+        <!-- Mot de passe -->
+        <div class="mb-6">
+          <label for="id_password" class="block text-sm font-medium text-gray-700 mb-1.5">
+            Mot de passe
+          </label>
+          <input
+            type="password"
+            name="password"
+            id="id_password"
+            autocomplete="current-password"
+            required
+            placeholder="••••••••"
+            class="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-base
+                   text-gray-900 placeholder-gray-400
+                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                   transition-colors"
+          />
+        </div>
+
+        <!-- Bouton -->
+        <button
+          type="submit"
+          class="w-full rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800
+                 text-white font-semibold text-base py-3
+                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                 transition-colors shadow-sm"
+        >
+          Se connecter
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="mt-10 text-center text-xs text-gray-400">
+    &copy; {% now "Y" %} AquaTogo &mdash; Tous droits réservés
+  </footer>
+
+</body>
+</html>

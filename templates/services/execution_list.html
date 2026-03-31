@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Prochaines prestations{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <a href="{% url 'services:list' %}"
+       class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Prochaines prestations</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Interventions à planifier ou en retard</p>
+    </div>
+  </div>
+
+  {% if executions %}
+
+  <!-- Overdue -->
+  {% with overdue_list=executions %}
+  <div class="space-y-2">
+    {% for ex in executions %}
+    <div class="card flex items-start gap-3
+      {% if ex.is_overdue %}border-l-4 border-l-red-400{% elif ex.next_due_date == today %}border-l-4 border-l-yellow-400{% else %}border-l-4 border-l-blue-400{% endif %}">
+
+      <!-- Urgency indicator -->
+      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full mt-0.5
+        {% if ex.is_overdue %}bg-red-100{% elif ex.next_due_date == today %}bg-yellow-100{% else %}bg-blue-100{% endif %}">
+        {% if ex.is_overdue %}
+        <svg class="h-4 w-4 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+        </svg>
+        {% elif ex.next_due_date == today %}
+        <svg class="h-4 w-4 text-yellow-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+        </svg>
+        {% else %}
+        <svg class="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
+        </svg>
+        {% endif %}
+      </div>
+
+      <!-- Content -->
+      <div class="flex-1 min-w-0">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-gray-900 truncate">{{ ex.service.name }}</p>
+            <a href="{% url 'clients:detail' ex.client.pk %}" class="text-sm text-gray-600 hover:text-brand-600 transition-colors">
+              {{ ex.client.name }}
+            </a>
+          </div>
+          {% if ex.is_overdue %}
+          <span class="badge-red shrink-0">En retard</span>
+          {% elif ex.next_due_date == today %}
+          <span class="badge-yellow shrink-0">Aujourd'hui</span>
+          {% else %}
+          <span class="badge-blue shrink-0">À venir</span>
+          {% endif %}
+        </div>
+
+        <div class="flex items-center justify-between gap-3 mt-2">
+          <div class="text-xs text-gray-500">
+            {% if ex.is_overdue %}
+            <span class="text-red-600 font-medium">
+              Prévu le {{ ex.next_due_date|date:"d/m/Y" }}
+            </span>
+            {% elif ex.next_due_date == today %}
+            <span class="text-yellow-600 font-medium">Prévu aujourd'hui</span>
+            {% else %}
+            Prévu le {{ ex.next_due_date|date:"d/m/Y" }}
+            {% if ex.days_until_due is not None %}
+            — dans {{ ex.days_until_due }} jour{{ ex.days_until_due|pluralize }}
+            {% endif %}
+            {% endif %}
+          </div>
+          <form method="post" action="{% url 'services:execution_complete' ex.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'services:execution_list' %}">
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 rounded-lg bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
+              </svg>
+              Effectuée
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endwith %}
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="card text-center py-12">
+    <div class="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-green-100 mb-4">
+      <svg class="h-7 w-7 text-green-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
+      </svg>
+    </div>
+    <h3 class="text-base font-semibold text-gray-900">Tout est à jour !</h3>
+    <p class="text-sm text-gray-500 mt-1">Aucune prestation en attente pour le moment.</p>
+    <div class="mt-4">
+      <a href="{% url 'services:list' %}" class="btn-secondary">Voir les prestations</a>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

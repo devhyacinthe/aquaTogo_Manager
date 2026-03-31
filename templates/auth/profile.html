@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Profil & Paramètres{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto space-y-5 pb-6"
+     x-data="{ tab: '{{ active_tab }}' }">
+
+  {# ── Avatar + identité ──────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-4 pt-1">
+    <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl
+                bg-gradient-to-br from-brand-500 to-brand-700
+                text-white text-2xl font-bold shadow-md shadow-brand-200">
+      {{ request.user.first_name|first|default:request.user.username|first|upper }}
+    </div>
+    <div class="min-w-0">
+      <h1 class="text-lg font-bold text-gray-900 truncate leading-tight">
+        {% if request.user.get_full_name %}
+          {{ request.user.get_full_name }}
+        {% else %}
+          {{ request.user.username }}
+        {% endif %}
+      </h1>
+      <p class="text-sm text-gray-400 mt-0.5">@{{ request.user.username }}</p>
+    </div>
+  </div>
+
+  {# ── Onglets ─────────────────────────────────────────────────────────────── #}
+  <div class="flex gap-1 rounded-xl bg-gray-100 p-1">
+    <button @click="tab = 'profil'"
+            :class="tab === 'profil'
+              ? 'bg-white shadow-sm text-gray-900 font-semibold'
+              : 'text-gray-500 hover:text-gray-700'"
+            class="flex-1 rounded-lg py-2 text-sm transition-all">
+      Profil
+    </button>
+    <button @click="tab = 'securite'"
+            :class="tab === 'securite'
+              ? 'bg-white shadow-sm text-gray-900 font-semibold'
+              : 'text-gray-500 hover:text-gray-700'"
+            class="flex-1 rounded-lg py-2 text-sm transition-all">
+      Sécurité
+    </button>
+    <button @click="tab = 'parametres'"
+            :class="tab === 'parametres'
+              ? 'bg-white shadow-sm text-gray-900 font-semibold'
+              : 'text-gray-500 hover:text-gray-700'"
+            class="flex-1 rounded-lg py-2 text-sm transition-all">
+      Paramètres
+    </button>
+  </div>
+
+  {# ════════════════════════════════════════════════════════════════════════ #}
+  {# Onglet : Profil                                                          #}
+  {# ════════════════════════════════════════════════════════════════════════ #}
+  <div x-show="tab === 'profil'"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 translate-y-1"
+       x-transition:enter-end="opacity-100 translate-y-0">
+
+    <div class="card" x-data="{ loading: false }">
+      <h2 class="text-base font-semibold text-gray-800 mb-5">Informations personnelles</h2>
+
+      <form method="post" novalidate @submit="loading = true">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_profile" />
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Prénom</label>
+            {{ profile_form.first_name }}
+            {% if profile_form.first_name.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ profile_form.first_name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Nom</label>
+            {{ profile_form.last_name }}
+            {% if profile_form.last_name.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ profile_form.last_name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="sm:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Adresse e-mail</label>
+            {{ profile_form.email }}
+            {% if profile_form.email.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ profile_form.email.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="sm:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Téléphone</label>
+            {{ profile_form.phone }}
+            {% if profile_form.phone.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ profile_form.phone.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+        </div>
+
+        <div class="mt-6 flex justify-end">
+          <button type="submit" class="btn-primary" :disabled="loading">
+            <svg x-show="loading" class="spinner-sm" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span x-text="loading ? 'Enregistrement…' : 'Enregistrer les modifications'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ════════════════════════════════════════════════════════════════════════ #}
+  {# Onglet : Sécurité                                                        #}
+  {# ════════════════════════════════════════════════════════════════════════ #}
+  <div x-show="tab === 'securite'"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 translate-y-1"
+       x-transition:enter-end="opacity-100 translate-y-0">
+
+    <div class="card"
+         x-data="{ loading: false, showOld: false, showNew1: false, showNew2: false }">
+
+      <div class="flex items-center gap-3 mb-5">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50">
+          <svg class="h-5 w-5 text-amber-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+          </svg>
+        </div>
+        <h2 class="text-base font-semibold text-gray-800">Changer le mot de passe</h2>
+      </div>
+
+      <form method="post" novalidate @submit="loading = true">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_password" />
+
+        <div class="space-y-4">
+
+          {# Mot de passe actuel #}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Mot de passe actuel</label>
+            <div class="relative">
+              {{ password_form.old_password }}
+              <button type="button"
+                      @click="showOld = !showOld; $el.closest('div').querySelector('input').type = showOld ? 'text' : 'password'"
+                      class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 transition-colors">
+                <svg x-show="!showOld" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
+                </svg>
+                <svg x-show="showOld" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                </svg>
+              </button>
+            </div>
+            {% if password_form.old_password.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ password_form.old_password.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          {# Nouveau mot de passe #}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Nouveau mot de passe</label>
+            <div class="relative">
+              {{ password_form.new_password1 }}
+              <button type="button"
+                      @click="showNew1 = !showNew1; $el.closest('div').querySelector('input').type = showNew1 ? 'text' : 'password'"
+                      class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 transition-colors">
+                <svg x-show="!showNew1" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
+                </svg>
+                <svg x-show="showNew1" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                </svg>
+              </button>
+            </div>
+            {% if password_form.new_password1.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ password_form.new_password1.errors.0 }}</p>
+            {% endif %}
+            <p class="mt-1 text-xs text-gray-400">Minimum 8 caractères, mélanger lettres et chiffres.</p>
+          </div>
+
+          {# Confirmer le nouveau mot de passe #}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Confirmer le nouveau mot de passe</label>
+            <div class="relative">
+              {{ password_form.new_password2 }}
+              <button type="button"
+                      @click="showNew2 = !showNew2; $el.closest('div').querySelector('input').type = showNew2 ? 'text' : 'password'"
+                      class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 transition-colors">
+                <svg x-show="!showNew2" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
+                </svg>
+                <svg x-show="showNew2" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                </svg>
+              </button>
+            </div>
+            {% if password_form.new_password2.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ password_form.new_password2.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+        </div>
+
+        <div class="mt-6 flex justify-end">
+          <button type="submit" class="btn-primary" :disabled="loading">
+            <svg x-show="loading" class="spinner-sm" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span x-text="loading ? 'Modification…' : 'Changer le mot de passe'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ════════════════════════════════════════════════════════════════════════ #}
+  {# Onglet : Paramètres                                                      #}
+  {# ════════════════════════════════════════════════════════════════════════ #}
+  <div x-show="tab === 'parametres'"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 translate-y-1"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       class="space-y-4">
+
+    {# Session #}
+    <div class="card">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">Informations de compte</h2>
+      <dl class="divide-y divide-gray-100 text-sm">
+        <div class="flex justify-between py-2.5">
+          <dt class="text-gray-500">Identifiant</dt>
+          <dd class="font-medium text-gray-900">{{ request.user.username }}</dd>
+        </div>
+        <div class="flex justify-between py-2.5">
+          <dt class="text-gray-500">Membre depuis</dt>
+          <dd class="font-medium text-gray-900">{{ request.user.date_joined|date:"d/m/Y" }}</dd>
+        </div>
+        <div class="flex justify-between py-2.5">
+          <dt class="text-gray-500">Dernière connexion</dt>
+          <dd class="font-medium text-gray-900">
+            {% if request.user.last_login %}
+              {{ request.user.last_login|date:"d/m/Y à H:i" }}
+            {% else %}
+              —
+            {% endif %}
+          </dd>
+        </div>
+        {% if request.user.userprofile.phone %}
+        <div class="flex justify-between py-2.5">
+          <dt class="text-gray-500">Téléphone</dt>
+          <dd class="font-medium text-gray-900">{{ request.user.userprofile.phone }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+
+    {# Notifications Telegram #}
+    <div class="card">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">Notifications</h2>
+        <span class="badge-blue">Bientôt disponible</span>
+      </div>
+      <div class="flex items-center gap-3 py-1 opacity-50">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50">
+          <svg class="h-5 w-5 text-sky-500" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-sm font-medium text-gray-700">Résumé Telegram</p>
+          <p class="text-xs text-gray-400">Envoi quotidien des ventes via bot Telegram</p>
+        </div>
+      </div>
+    </div>
+
+    {# À propos de l'app #}
+    <div class="card">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">Application</h2>
+      <dl class="divide-y divide-gray-100 text-sm">
+        <div class="flex justify-between py-2.5">
+          <dt class="text-gray-500">Application</dt>
+          <dd class="font-medium text-gray-900">AquaTogo Manager</dd>
+        </div>
+        <div class="flex justify-between py-2.5">
+          <dt class="text-gray-500">Version</dt>
+          <dd class="font-medium text-gray-900">1.0.0</dd>
+        </div>
+      </dl>
+    </div>
+
+    {# Zone danger : déconnexion #}
+    <div class="card border-red-100 bg-red-50/30">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-red-400 mb-4">Zone dangereuse</h2>
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm font-medium text-gray-700">Se déconnecter</p>
+          <p class="text-xs text-gray-400 mt-0.5">Vous serez redirigé vers la page de connexion.</p>
+        </div>
+        <form method="post" action="{% url 'core:logout' %}" x-data="{ loading: false }">
+          {% csrf_token %}
+          <button type="submit" class="btn-danger shrink-0" :disabled="loading"
+                  @click="loading = true">
+            <svg x-show="loading" class="spinner-sm" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span x-text="loading ? 'Déconnexion…' : 'Se déconnecter'"></span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
