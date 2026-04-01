@@ -54,19 +54,63 @@
     </a>
   </div>
 
-  {# ── Mini-cartes résumé ─────────────────────────────────────────────────── #}
+  {# ── Résumé ─────────────────────────────────────────────────────────────── #}
   {% if sales %}
-  <div class="grid grid-cols-2 gap-3">
-    <div class="card p-4">
-      <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Chiffre d'affaires</p>
-      <p class="text-2xl font-bold text-gray-900 mt-1">{{ total_ca|floatformat:0 }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
+  <div class="space-y-3">
+
+    {# Totaux globaux #}
+    <div class="grid grid-cols-2 gap-3">
+      <div class="card p-4">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Chiffre d'affaires</p>
+        <p class="text-2xl font-bold text-gray-900 mt-1">{{ total_ca|floatformat:0 }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
+      </div>
+      <div class="card p-4">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Bénéfice estimé</p>
+        <p class="text-2xl font-bold text-green-600 mt-1">{{ total_profit|floatformat:0 }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
+      </div>
     </div>
-    <div class="card p-4">
-      <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Bénéfice estimé</p>
-      <p class="text-2xl font-bold text-green-600 mt-1">{{ total_profit|floatformat:0 }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
+
+    {# Répartition produits / prestations #}
+    <div class="card p-4 space-y-3">
+      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Répartition</p>
+
+      {# Produits #}
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50">
+            <svg class="h-4 w-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>
+            </svg>
+          </span>
+          <div>
+            <p class="text-sm font-medium text-gray-900">Produits</p>
+            <p class="text-xs text-green-600">Bén. {{ profit_products|floatformat:0 }} FCFA</p>
+          </div>
+        </div>
+        <p class="text-base font-bold text-gray-900 shrink-0">{{ rev_products|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span></p>
+      </div>
+
+      <div class="border-t border-gray-100"></div>
+
+      {# Prestations #}
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-50">
+            <svg class="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655m5.585-7.498-.074.038a2.25 2.25 0 0 0-.869 3.575l4.999 4.999a2.25 2.25 0 0 0 3.574-.869l.038-.074a2.25 2.25 0 0 0-.93-2.989L15.002 5.672a2.25 2.25 0 0 0-2.989.93Z"/>
+            </svg>
+          </span>
+          <div>
+            <p class="text-sm font-medium text-gray-900">Prestations</p>
+            <p class="text-xs text-green-600">Bén. {{ profit_services|floatformat:0 }} FCFA</p>
+          </div>
+        </div>
+        <p class="text-base font-bold text-gray-900 shrink-0">{{ rev_services|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span></p>
+      </div>
     </div>
+
   </div>
   {% endif %}
 

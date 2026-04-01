@@ -57,12 +57,29 @@ def sale_list(request):
     total_ca = aggregates["total_ca"] or Decimal("0.00")
     total_profit = aggregates["total_profit"] or Decimal("0.00")
 
+    # Répartition produits / prestations sur la même période
+    items_qs = SaleItem.objects.filter(sale__sale_date__gte=start, sale__sale_date__lte=end)
+    prod_agg = items_qs.filter(product__isnull=False).aggregate(
+        ca=Sum("line_total"), profit=Sum("line_profit")
+    )
+    svc_agg = items_qs.filter(service__isnull=False).aggregate(
+        ca=Sum("line_total"), profit=Sum("line_profit")
+    )
+    rev_products = prod_agg["ca"] or Decimal("0.00")
+    profit_products = prod_agg["profit"] or Decimal("0.00")
+    rev_services = svc_agg["ca"] or Decimal("0.00")
+    profit_services = svc_agg["profit"] or Decimal("0.00")
+
     return render(request, "sales/list.html", {
         "sales": sales,
         "period": periode,
         "today": today,
         "total_ca": total_ca,
         "total_profit": total_profit,
+        "rev_products": rev_products,
+        "profit_products": profit_products,
+        "rev_services": rev_services,
+        "profit_services": profit_services,
     })
 
 
