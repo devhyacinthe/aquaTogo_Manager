@@ -8,6 +8,7 @@ class Product(models.Model):
     class Category(models.TextChoices):
         FISH = "fish", "Poisson"
         ACCESSORY = "accessory", "Accessoire"
+        AQUARIUM = "aquarium", "Aquarium"
 
     name = models.CharField(max_length=200)
     category = models.CharField(

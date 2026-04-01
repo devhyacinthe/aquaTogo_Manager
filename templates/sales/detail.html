@@ -27,6 +27,8 @@
       <div class="flex items-center gap-2 mt-1 text-xs text-gray-400 flex-wrap">
         <span>{{ sale.sale_date|date:"d/m/Y" }}</span>
         <span class="text-gray-200">·</span>
+        <span>{{ sale.created_at|time:"H:i" }}</span>
+        <span class="text-gray-200">·</span>
         <span>Par {{ sale.created_by.get_full_name|default:sale.created_by.username }}</span>
         {% if sale.client %}
         <span class="text-gray-200">·</span>

@@ -62,14 +62,39 @@ def service_create(request):
 
 @login_required
 def service_detail(request, pk):
+    from django.db.models import Prefetch
+
     service = get_object_or_404(Service, pk=pk)
 
-    executions = (
+    # Récupère les exécutions « têtes de groupe » (sans parent) + leurs enfants
+    head_execs = list(
         ServiceExecution.objects
-        .filter(service=service)
-        .select_related("client")
-        .order_by("-execution_date")[:15]
+        .filter(service=service, parent_execution__isnull=True)
+        .select_related("client", "sale_item__sale")
+        .prefetch_related(
+            Prefetch(
+                "children",
+                queryset=ServiceExecution.objects.order_by("execution_date"),
+            )
+        )
+        .order_by("-execution_date")[:10]
     )
+
+    # Construit les groupes pour le template
+    execution_groups = []
+    for head in head_execs:
+        children = list(head.children.all())
+        members = [head] + children
+        all_done = all(m.is_completed for m in members)
+        any_done = any(m.is_completed for m in members)
+        execution_groups.append({
+            "head": head,
+            "members": members,
+            "children": children,
+            "is_group": bool(children),
+            "all_done": all_done,
+            "any_done": any_done,
+        })
 
     upcoming = (
         ServiceExecution.objects
@@ -80,7 +105,7 @@ def service_detail(request, pk):
 
     context = {
         "service": service,
-        "executions": executions,
+        "execution_groups": execution_groups,
         "upcoming": upcoming,
         "is_staff": request.user.is_staff,
         "today": timezone.now().date(),
@@ -407,12 +432,42 @@ def execution_confirm(request, pk):
 @require_POST
 def execution_complete(request, pk):
     execution = get_object_or_404(ServiceExecution, pk=pk)
-    execution.is_completed = True
-    execution.save(update_fields=["is_completed"])
-    messages.success(
-        request,
-        f"Prestation « {execution.service.name} » pour {execution.client.name} marquée comme effectuée."
-    )
+    if not execution.is_completed:
+        execution.is_completed = True
+        execution.save(update_fields=["is_completed"])
+
+        # Auto-planification du prochain tour pour les services récurrents
+        if execution.next_due_date and execution.tours_per_month:
+            next_date = execution.next_due_date
+            already_exists = ServiceExecution.objects.filter(
+                client=execution.client,
+                service=execution.service,
+                execution_date=next_date,
+                is_completed=False,
+            ).exists()
+            if not already_exists:
+                ServiceExecution.objects.create(
+                    client=execution.client,
+                    service=execution.service,
+                    tours_per_month=execution.tours_per_month,
+                    execution_date=next_date,
+                )
+                messages.success(
+                    request,
+                    f"Prestation « {execution.service.name} » pour {execution.client.name} effectuée. "
+                    f"Prochain passage planifié le {next_date.strftime('%d/%m/%Y')}."
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Prestation « {execution.service.name} » pour {execution.client.name} marquée comme effectuée."
+                )
+        else:
+            messages.success(
+                request,
+                f"Prestation « {execution.service.name} » pour {execution.client.name} marquée comme effectuée."
+            )
+
     next_url = request.POST.get("next", "")
     if next_url:
         return redirect(next_url)

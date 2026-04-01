@@ -54,6 +54,17 @@ class Service(models.Model):
         return f"Tous les {days} jours"
 
 
+# Délai en jours selon le nombre de tours par mois
+_TOURS_DELAY: dict[int, int] = {1: 30, 2: 15, 3: 10, 4: 7}
+
+TOURS_CHOICES = [
+    (1, "1 tour / mois — tous les 30 jours"),
+    (2, "2 tours / mois — tous les 15 jours"),
+    (3, "3 tours / mois — tous les 10 jours"),
+    (4, "4 tours / mois — tous les 7 jours"),
+]
+
+
 class ServiceExecution(models.Model):
     client = models.ForeignKey(
         "clients.Client",
@@ -65,6 +76,14 @@ class ServiceExecution(models.Model):
         on_delete=models.PROTECT,
         related_name="executions",
     )
+    # Regroupe les passages créés ensemble (multi-tours payés en une fois)
+    parent_execution = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="children",
+    )
     # Lien optionnel vers la ligne de vente qui a généré cette exécution
     sale_item = models.OneToOneField(
         "sales.SaleItem",
@@ -73,11 +92,18 @@ class ServiceExecution(models.Model):
         blank=True,
         related_name="service_execution",
     )
+    # Nombre de passages par mois choisi par le client (1, 2, 3 ou 4)
+    tours_per_month = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=TOURS_CHOICES,
+        help_text="Nombre de tours d'entretien par mois. Détermine l'intervalle entre deux passages.",
+    )
     execution_date = models.DateField()
     next_due_date = models.DateField(
         null=True,
         blank=True,
-        help_text="Calculée automatiquement depuis execution_date + renewal_delay_days.",
+        help_text="Calculée automatiquement depuis execution_date + intervalle selon les tours.",
     )
     is_completed = models.BooleanField(default=False)
     reminder_sent = models.BooleanField(default=False)
@@ -104,12 +130,23 @@ class ServiceExecution(models.Model):
     def __str__(self):
         return f"{self.service.name} – {self.client.name} – {self.execution_date}"
 
+    def interval_days(self) -> int | None:
+        """Intervalle en jours entre deux passages.
+
+        Priorité : tours_per_month (choix du client) > renewal_delay_days du service.
+        """
+        if self.tours_per_month:
+            return _TOURS_DELAY.get(self.tours_per_month)
+        if self.service.has_renewal:
+            return self.service.renewal_delay_days
+        return None
+
     def save(self, *args, **kwargs):
         # Calcul automatique de next_due_date
-        if self.service.has_renewal and not self.next_due_date:
-            self.next_due_date = self.execution_date + timedelta(
-                days=self.service.renewal_delay_days
-            )
+        if not self.next_due_date:
+            days = self.interval_days()
+            if days:
+                self.next_due_date = self.execution_date + timedelta(days=days)
         super().save(*args, **kwargs)
 
     @property
@@ -125,3 +162,12 @@ class ServiceExecution(models.Model):
         if not self.next_due_date:
             return None
         return (self.next_due_date - timezone.now().date()).days
+
+    @property
+    def tours_display(self) -> str:
+        """Affichage lisible du rythme d'entretien."""
+        if not self.tours_per_month:
+            return self.service.renewal_delay_display
+        days = _TOURS_DELAY[self.tours_per_month]
+        labels = {1: "1 tour/mois", 2: "2 tours/mois", 3: "3 tours/mois", 4: "4 tours/mois"}
+        return f"{labels[self.tours_per_month]} — tous les {days} jours"

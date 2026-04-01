@@ -187,7 +187,20 @@
                     <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
                     <span style="font-size:0.65rem;font-weight:600;color:#7c3aed;background:#ede9fe;border-radius:9999px;padding:1px 7px;">Prestation</span>
                   </div>
-                  <p class="text-xs text-gray-400 mt-0.5"><span x-text="fmt(item.unit_price)"></span> FCFA</p>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    <template x-if="item.qty > 1">
+                      <span><span x-text="item.qty"></span> tours × <span x-text="fmt(item.unit_price)"></span> FCFA</span>
+                    </template>
+                    <template x-if="item.qty === 1">
+                      <span><span x-text="fmt(item.unit_price)"></span> FCFA</span>
+                    </template>
+                    <template x-if="item.tours_per_month">
+                      <span> · <span x-text="item.tours_label"></span></span>
+                    </template>
+                    <template x-if="!item.tours_per_month">
+                      <span> · Ponctuel</span>
+                    </template>
+                  </p>
                 </div>
                 <div class="shrink-0 text-right">
                   <p class="text-sm font-semibold text-gray-900">
@@ -349,37 +362,42 @@
                class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
       </div>
 
-      {# Liste produits scrollable #}
-      <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
-        <template x-if="filteredProducts.length === 0">
+      {# Liste produits groupée par catégorie #}
+      <div class="overflow-y-auto flex-1">
+        <template x-if="productsByCategory.length === 0">
           <div class="flex items-center justify-center py-10 text-sm text-gray-400">Aucun produit trouvé.</div>
         </template>
-        <template x-for="p in filteredProducts" :key="p.id">
-          <button type="button"
-                  @click="!p.is_out_of_stock && addToCart(p, 'product')"
-                  :class="p.is_out_of_stock ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 active:bg-gray-100'"
-                  class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2 flex-wrap">
-                <p class="text-sm font-medium text-gray-900" x-text="p.name"></p>
-                <span class="badge-blue text-xs" x-text="p.category"></span>
-              </div>
-              <p class="text-xs text-gray-400 mt-0.5">
-                Achat : <span x-text="p.purchase_price"></span> FCFA
-              </p>
+        <template x-for="group in productsByCategory" :key="group.key">
+          <div>
+            {# En-tête de catégorie #}
+            <div class="sticky top-0 z-10 bg-gray-50 px-5 py-2 border-y border-gray-100">
+              <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider" x-text="group.label"></span>
             </div>
-            <div class="shrink-0 text-right">
-              <p class="text-sm font-semibold text-gray-900">
-                <span x-text="parseInt(p.selling_price).toLocaleString('fr-FR')"></span> FCFA
-              </p>
-              <template x-if="p.is_out_of_stock">
-                <span class="badge-red text-xs">Rupture</span>
-              </template>
-              <template x-if="!p.is_out_of_stock">
-                <span class="text-xs text-gray-400">Stock : <span x-text="p.stock_quantity"></span></span>
-              </template>
-            </div>
-          </button>
+            <template x-for="p in group.products" :key="p.id">
+              <button type="button"
+                      @click="!p.is_out_of_stock && addToCart(p, 'product')"
+                      :class="p.is_out_of_stock ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 active:bg-gray-100'"
+                      class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors border-b border-gray-50">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-gray-900" x-text="p.name"></p>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    Achat : <span x-text="p.purchase_price"></span> FCFA
+                  </p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <p class="text-sm font-semibold text-gray-900">
+                    <span x-text="parseInt(p.selling_price).toLocaleString('fr-FR')"></span> FCFA
+                  </p>
+                  <template x-if="p.is_out_of_stock">
+                    <span class="badge-red text-xs">Rupture</span>
+                  </template>
+                  <template x-if="!p.is_out_of_stock">
+                    <span class="text-xs text-gray-400">Stock : <span x-text="p.stock_quantity"></span></span>
+                  </template>
+                </div>
+              </button>
+            </template>
+          </div>
         </template>
       </div>
     </div>
@@ -394,7 +412,7 @@
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0"
        class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4"
-       @click.self="modal = null">
+       @click.self="modal = null; pendingService = null; pendingTours = null">
 
     <div x-show="modal === 'services'"
          x-transition:enter="transition ease-out duration-200"
@@ -407,8 +425,9 @@
 
       {# En-tête modal #}
       <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
-        <h3 class="font-semibold text-gray-900">Choisir une prestation</h3>
-        <button type="button" @click="modal = null"
+        <h3 class="font-semibold text-gray-900"
+            x-text="pendingTours ? 'Mode de paiement' : pendingService ? 'Fréquence d\'entretien' : 'Choisir une prestation'"></h3>
+        <button type="button" @click="modal = null; pendingService = null; pendingTours = null"
                 class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
@@ -416,37 +435,167 @@
         </button>
       </div>
 
-      {# Recherche #}
-      <div class="px-4 py-3 border-b border-gray-100 shrink-0">
-        <input type="text"
-               x-model="searchQuery"
-               placeholder="Rechercher une prestation..."
-               class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
-      </div>
+      {# Recherche ou sélection tours #}
+      <template x-if="!pendingService">
+        <div class="px-4 py-3 border-b border-gray-100 shrink-0">
+          <input type="text"
+                 x-model="searchQuery"
+                 placeholder="Rechercher une prestation..."
+                 class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+        </div>
+      </template>
 
-      {# Liste services scrollable #}
-      <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
-        <template x-if="filteredServices.length === 0">
-          <div class="flex items-center justify-center py-10 text-sm text-gray-400">Aucune prestation trouvée.</div>
-        </template>
-        <template x-for="s in filteredServices" :key="s.id">
-          <button type="button"
-                  @click="addToCart(s, 'service')"
-                  class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <p class="text-sm font-medium text-gray-900" x-text="s.name"></p>
-                <span class="badge-blue text-xs">Prestation</span>
+      {# Étape 1 : Liste services #}
+      <template x-if="!pendingService">
+        <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
+          <template x-if="filteredServices.length === 0">
+            <div class="flex items-center justify-center py-10 text-sm text-gray-400">Aucune prestation trouvée.</div>
+          </template>
+          <template x-for="s in filteredServices" :key="s.id">
+            <button type="button"
+                    @click="selectService(s)"
+                    class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-medium text-gray-900" x-text="s.name"></p>
+                  <span class="badge-blue text-xs">Prestation</span>
+                </div>
               </div>
-            </div>
-            <div class="shrink-0">
-              <p class="text-sm font-semibold text-gray-900">
-                <span x-text="parseInt(s.price).toLocaleString('fr-FR')"></span> FCFA
-              </p>
-            </div>
-          </button>
-        </template>
-      </div>
+              <div class="shrink-0 text-right">
+                <p class="text-sm font-semibold text-gray-900">
+                  <span x-text="parseInt(s.price).toLocaleString('fr-FR')"></span> FCFA
+                </p>
+                <p class="text-xs text-gray-400 mt-0.5">Choisir →</p>
+              </div>
+            </button>
+          </template>
+        </div>
+      </template>
+
+      {# Étape 2 : Choisir le nombre de tours #}
+      <template x-if="pendingService && !pendingTours">
+        <div class="flex-1 flex flex-col overflow-y-auto">
+          {# Récap de la prestation #}
+          <div class="px-5 py-4 bg-purple-50 border-b border-purple-100">
+            <p class="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Prestation sélectionnée</p>
+            <p class="text-base font-semibold text-gray-900" x-text="pendingService.name"></p>
+            <p class="text-sm text-gray-500 mt-0.5">
+              <span x-text="parseInt(pendingService.price).toLocaleString('fr-FR')"></span> FCFA
+            </p>
+          </div>
+
+          {# Sélection du nombre de tours #}
+          <div class="px-5 py-5 space-y-3">
+            <p class="text-sm font-semibold text-gray-700">Nombre de passages par mois</p>
+
+            <template x-for="opt in toursOptions" :key="opt.value">
+              <button type="button"
+                      @click="confirmServiceWithTours(opt.value)"
+                      class="w-full flex items-center justify-between px-4 py-3.5 rounded-xl border border-gray-200 text-left hover:border-purple-400 hover:bg-purple-50 active:bg-purple-100 transition-colors group">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900" x-text="opt.label"></p>
+                  <p class="text-xs text-gray-400 mt-0.5" x-text="opt.detail"></p>
+                </div>
+                <svg class="h-4 w-4 text-gray-300 group-hover:text-purple-500 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                </svg>
+              </button>
+            </template>
+
+            {# Option ponctuel #}
+            <button type="button"
+                    @click="confirmServiceWithTours(null)"
+                    class="w-full flex items-center justify-between px-4 py-3.5 rounded-xl border border-dashed border-gray-300 text-left hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100 transition-colors group">
+              <div>
+                <p class="text-sm font-semibold text-gray-600">Ponctuel / Sans renouvellement</p>
+                <p class="text-xs text-gray-400 mt-0.5">Pas de rappel automatique</p>
+              </div>
+              <svg class="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+              </svg>
+            </button>
+          </div>
+
+          {# Retour à la liste #}
+          <div class="px-5 pb-5">
+            <button type="button"
+                    @click="pendingService = null; pendingTours = null; searchQuery = ''"
+                    class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+              ← Revenir à la liste
+            </button>
+          </div>
+        </div>
+      </template>
+
+      {# Étape 3 : Mode de paiement (tours > 1) #}
+      <template x-if="pendingTours && pendingTours > 1">
+        <div class="flex-1 flex flex-col overflow-y-auto">
+          {# Récap prestation + fréquence #}
+          <div class="px-5 py-4 bg-purple-50 border-b border-purple-100">
+            <p class="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Mode de paiement</p>
+            <p class="text-base font-semibold text-gray-900" x-text="pendingService && pendingService.name"></p>
+            <p class="text-sm text-gray-500 mt-0.5">
+              <span x-text="(toursOptions.find(o => o.value === pendingTours) || {}).label || ''"></span>
+            </p>
+          </div>
+
+          <div class="px-5 py-5 space-y-3">
+            <p class="text-sm font-semibold text-gray-700">Combien de tours le client paie-t-il ?</p>
+
+            {# Option : tour suivant seulement #}
+            <button type="button"
+                    @click="confirmPayMode(false)"
+                    class="w-full text-left px-4 py-4 rounded-xl border-2 border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:bg-brand-100 transition-colors group">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900">Tour suivant seulement</p>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    1 passage ×
+                    <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
+                    = <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
+                  </p>
+                  <p class="text-xs text-gray-400 mt-1">Le prochain tour sera planifié automatiquement à chaque passage.</p>
+                </div>
+                <svg class="h-5 w-5 text-gray-300 group-hover:text-brand-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                </svg>
+              </div>
+            </button>
+
+            {# Option : tous les tours du mois #}
+            <button type="button"
+                    @click="confirmPayMode(true)"
+                    class="w-full text-left px-4 py-4 rounded-xl border-2 border-green-200 hover:border-green-500 hover:bg-green-50 active:bg-green-100 transition-colors group">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900">
+                    Tous les tours du mois
+                    <span class="ml-1.5 text-xs font-medium text-green-600 bg-green-100 rounded-full px-2 py-0.5">Recommandé</span>
+                  </p>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    <span x-text="pendingTours"></span> passages ×
+                    <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
+                    = <strong x-text="(pendingTours * parseInt(pendingService && pendingService.price)).toLocaleString('fr-FR')"></strong> FCFA
+                  </p>
+                  <p class="text-xs text-gray-400 mt-1">Tous les passages sont pré-planifiés dans le calendrier.</p>
+                </div>
+                <svg class="h-5 w-5 text-gray-300 group-hover:text-green-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                </svg>
+              </div>
+            </button>
+          </div>
+
+          {# Retour à la fréquence #}
+          <div class="px-5 pb-5">
+            <button type="button"
+                    @click="pendingTours = null"
+                    class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+              ← Changer la fréquence
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 
@@ -478,6 +627,16 @@ function saleCreate() {
     // Modals
     modal: null,
     searchQuery: '',
+    pendingService: null,
+    pendingTours: null,   // tours_per_month sélectionné, en attente du mode de paiement
+
+    // Constantes tours
+    toursOptions: [
+      { value: 1, label: '1 tour / mois', detail: 'Renouvellement tous les 30 jours', interval: 30 },
+      { value: 2, label: '2 tours / mois', detail: 'Renouvellement tous les 15 jours', interval: 15 },
+      { value: 3, label: '3 tours / mois', detail: 'Renouvellement tous les 10 jours', interval: 10 },
+      { value: 4, label: '4 tours / mois', detail: 'Renouvellement tous les 7 jours', interval: 7 },
+    ],
 
     // Cart
     cart: [],
@@ -510,6 +669,22 @@ function saleCreate() {
       return this.products.filter(p => p.name.toLowerCase().includes(q));
     },
 
+    get productsByCategory() {
+      const catLabels = { fish: 'Poissons', accessory: 'Accessoires', aquarium: 'Aquarium' };
+      const catOrder = ['fish', 'aquarium', 'accessory'];
+      const groups = {};
+      for (const p of this.filteredProducts) {
+        const k = p.category_key || 'accessory';
+        if (!groups[k]) groups[k] = [];
+        groups[k].push(p);
+      }
+      return catOrder.filter(k => groups[k]).map(k => ({
+        key: k,
+        label: catLabels[k] || k,
+        products: groups[k],
+      }));
+    },
+
     get filteredServices() {
       if (!this.searchQuery) return this.services;
       const q = this.searchQuery.toLowerCase();
@@ -539,6 +714,50 @@ function saleCreate() {
       this.selectedClient = null;
       this.clientQuery = '';
       this.clientResults = [];
+    },
+
+    selectService(s) {
+      this.pendingService = s;
+      this.pendingTours = null;
+    },
+
+    confirmServiceWithTours(tours) {
+      // tours = null → ponctuel, pas d'étape paiement
+      // tours = 1   → 1 seul tour possible, pas de choix
+      // tours > 1   → afficher le choix paiement
+      if (!tours || tours === 1) {
+        this._addServiceToCart(tours, 1);
+      } else {
+        this.pendingTours = tours;
+      }
+    },
+
+    confirmPayMode(payAll) {
+      const tours = this.pendingTours;
+      const qty = payAll ? tours : 1;
+      this._addServiceToCart(tours, qty);
+    },
+
+    _addServiceToCart(tours, qty) {
+      const s = this.pendingService;
+      if (!s) return;
+      const opt = tours ? this.toursOptions.find(o => o.value === tours) : null;
+      const toursLabel = opt ? opt.label : '';
+      this.cart.push({
+        type: 'service',
+        id: s.id,
+        name: s.name,
+        unit_price: s.price,
+        purchase_price: '0',
+        qty,
+        stock: null,
+        tours_per_month: tours,
+        tours_label: toursLabel,
+      });
+      this.pendingService = null;
+      this.pendingTours = null;
+      this.modal = null;
+      this.searchQuery = '';
     },
 
     addToCart(item, type) {

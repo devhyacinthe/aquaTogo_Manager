@@ -8,7 +8,9 @@
       "Bash(python manage.py show_urls)",
       "Bash(pip show:*)",
       "Bash(pip install:*)",
-      "Bash(venv/Scripts/python manage.py send_daily_report --dry-run 2>&1)"
+      "Bash(venv/Scripts/python manage.py send_daily_report --dry-run 2>&1)",
+      "Bash(python:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

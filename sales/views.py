@@ -95,6 +95,7 @@ def sale_create(request):
             "id": p.id,
             "name": p.name,
             "category": p.get_category_display(),
+            "category_key": p.category,
             "selling_price": str(p.selling_price),
             "purchase_price": str(p.purchase_price),
             "stock_quantity": p.stock_quantity,
@@ -175,6 +176,8 @@ def sale_create(request):
                         )
                     elif item_type == "service":
                         service_obj = Service.objects.get(pk=item_id)
+                        tours_per_month_raw = item.get("tours_per_month")
+                        tours_per_month = int(tours_per_month_raw) if tours_per_month_raw else None
                         sale_item = SaleItem.objects.create(
                             sale=sale,
                             service=service_obj,
@@ -182,13 +185,27 @@ def sale_create(request):
                             unit_price=unit_price,
                             purchase_price_snapshot=Decimal("0.00"),
                         )
-                        # Create linked ServiceExecution for renewal tracking
-                        ServiceExecution.objects.create(
+                        # Premier passage — lié au SaleItem
+                        first_exec = ServiceExecution.objects.create(
                             client=client,
                             service=service_obj,
                             sale_item=sale_item,
                             execution_date=sale.sale_date,
+                            tours_per_month=tours_per_month,
                         )
+                        # Passages suivants pré-planifiés si le client paye plusieurs tours
+                        if qty > 1 and tours_per_month:
+                            from datetime import timedelta
+                            interval = first_exec.interval_days() or 0
+                            for i in range(1, qty):
+                                next_date = sale.sale_date + timedelta(days=interval * i)
+                                ServiceExecution.objects.create(
+                                    client=client,
+                                    service=service_obj,
+                                    tours_per_month=tours_per_month,
+                                    execution_date=next_date,
+                                    parent_execution=first_exec,
+                                )
 
                 sale.recompute_totals()
 

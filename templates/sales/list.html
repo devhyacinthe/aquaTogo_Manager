@@ -129,6 +129,8 @@
         <div class="flex items-center gap-2 mt-0.5">
           <p class="text-xs text-gray-400">{{ sale.sale_date|date:"d/m/Y" }}</p>
           <span class="text-gray-200">·</span>
+          <p class="text-xs text-gray-400">{{ sale.created_at|time:"H:i" }}</p>
+          <span class="text-gray-200">·</span>
           <p class="text-xs text-gray-400">{{ sale.items.count }} article{{ sale.items.count|pluralize }}</p>
         </div>
       </div>
