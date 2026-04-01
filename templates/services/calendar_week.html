@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Planning semaine{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-4">
+
+  {# ── Header #}
+  <div class="flex items-center gap-3">
+    <a href="{% url 'services:execution_list' %}"
+       class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Planning semaine</h1>
+      <p class="text-sm text-gray-500 mt-0.5">
+        {{ week_start|date:"d" }} – {{ week_end|date:"d F Y" }}
+      </p>
+    </div>
+  </div>
+
+  {# ── Navigation semaine + switch vues #}
+  <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <a href="?date={{ prev_week }}"
+         class="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+        </svg>
+      </a>
+      <a href="?date={{ today|date:'Y-m-d' }}"
+         class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+        Aujourd'hui
+      </a>
+      <a href="?date={{ next_week }}"
+         class="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+        </svg>
+      </a>
+    </div>
+    <div class="flex gap-2">
+      <a href="{% url 'services:calendar_month' %}?date={{ week_start|date:'Y-m-d' }}"
+         class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors">
+        Mois
+      </a>
+      <span class="inline-flex items-center rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white">
+        Semaine
+      </span>
+    </div>
+  </div>
+
+  {# ── Jours de la semaine #}
+  <div class="space-y-3">
+    {% for day in week_days %}
+    <div class="rounded-2xl border overflow-hidden
+      {% if day.date == today %}border-brand-300 shadow-sm shadow-brand-100{% else %}border-gray-200{% endif %}">
+
+      {# Entête du jour #}
+      <div class="flex items-center justify-between px-4 py-2.5
+        {% if day.date == today %}bg-brand-600 text-white{% elif day.date < today %}bg-gray-50 text-gray-400{% else %}bg-gray-50 text-gray-700{% endif %}">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold">{{ day.label_long }}</span>
+          <span class="text-sm {% if day.date == today %}text-brand-200{% else %}text-gray-400{% endif %}">
+            {{ day.date|date:"d/m" }}
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          {% if day.executions %}
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold
+            {% if day.date == today %}bg-white/20 text-white{% else %}bg-gray-200 text-gray-600{% endif %}">
+            {{ day.executions|length }}
+          </span>
+          {% endif %}
+          <a href="{% url 'services:calendar_day' %}?date={{ day.date|date:'Y-m-d' }}"
+             class="text-xs {% if day.date == today %}text-brand-200 hover:text-white{% else %}text-gray-400 hover:text-brand-600{% endif %} transition-colors">
+            Détail →
+          </a>
+        </div>
+      </div>
+
+      {# Prestations du jour #}
+      {% if day.executions %}
+      <div class="divide-y divide-gray-100 bg-white">
+        {% for ex in day.executions %}
+        <div class="flex items-center justify-between px-4 py-3 gap-3
+          {% if ex.is_overdue %}bg-red-50/50{% endif %}">
+          <div class="flex items-center gap-3 min-w-0">
+            {# Heure si disponible #}
+            {% if ex.scheduled_time %}
+            <span class="text-xs font-mono text-gray-500 shrink-0 w-10">{{ ex.scheduled_time|time:"H:i" }}</span>
+            {% else %}
+            <span class="text-xs text-gray-300 shrink-0 w-10">--:--</span>
+            {% endif %}
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-900 truncate">{{ ex.client.name }}</p>
+              <p class="text-xs text-gray-400 truncate">{{ ex.service.name }}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            {# Badge confirmation #}
+            {% if ex.confirmed %}
+            <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+              <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
+              </svg>
+              Confirmé
+            </span>
+            {% else %}
+            <form method="post" action="{% url 'services:execution_confirm' ex.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{% url 'services:calendar_week' %}?date={{ week_start|date:'Y-m-d' }}">
+              <button type="submit"
+                      class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-500 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-600 transition-colors">
+                Confirmer
+              </button>
+            </form>
+            {% endif %}
+            {# Badge statut #}
+            {% if ex.is_overdue %}
+            <span class="badge-red">Retard</span>
+            {% elif ex.is_completed %}
+            <span class="badge-green">Fait</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-4 py-3 bg-white">
+        <p class="text-xs text-gray-300 italic">Rien de prévu</p>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

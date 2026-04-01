@@ -1,4 +1,6 @@
-from datetime import date as _date
+import calendar as _cal
+from collections import defaultdict
+from datetime import date as _date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -249,6 +251,156 @@ def record_execution(request, service_pk):
         messages.error(request, f"Erreur : {e}")
 
     return redirect("services:detail", pk=service_pk)
+
+
+_MONTHS_FR = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+]
+_DAYS_FR_SHORT = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+_DAYS_FR_LONG = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+
+
+def _parse_date(raw: str) -> _date:
+    try:
+        return _date.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return timezone.now().date()
+
+
+@login_required
+def calendar_week(request):
+    ref = _parse_date(request.GET.get("date", ""))
+    week_start = ref - timedelta(days=ref.weekday())  # Monday
+    week_end = week_start + timedelta(days=6)
+
+    executions = (
+        ServiceExecution.objects
+        .filter(next_due_date__gte=week_start, next_due_date__lte=week_end)
+        .select_related("client", "service")
+        .order_by("scheduled_time", "client__name")
+    )
+
+    by_date = defaultdict(list)
+    for ex in executions:
+        by_date[ex.next_due_date].append(ex)
+
+    week_days = []
+    for i in range(7):
+        d = week_start + timedelta(days=i)
+        week_days.append({
+            "date": d,
+            "label_short": _DAYS_FR_SHORT[i],
+            "label_long": _DAYS_FR_LONG[i],
+            "executions": by_date.get(d, []),
+        })
+
+    context = {
+        "week_days": week_days,
+        "week_start": week_start,
+        "week_end": week_end,
+        "prev_week": (week_start - timedelta(days=7)).isoformat(),
+        "next_week": (week_start + timedelta(days=7)).isoformat(),
+        "today": timezone.now().date(),
+        "app_name": "services",
+    }
+    return render(request, "services/calendar_week.html", context)
+
+
+@login_required
+def calendar_month(request):
+    ref = _parse_date(request.GET.get("date", ""))
+    year, month = ref.year, ref.month
+    today = timezone.now().date()
+
+    first_day = _date(year, month, 1)
+    last_day = _date(year, month, _cal.monthrange(year, month)[1])
+
+    executions = (
+        ServiceExecution.objects
+        .filter(next_due_date__gte=first_day, next_due_date__lte=last_day)
+        .select_related("client", "service")
+    )
+
+    by_day = defaultdict(list)
+    for ex in executions:
+        by_day[ex.next_due_date.day].append(ex)
+
+    # Build grid: list of weeks, each week = list of 7 cells (None = padding)
+    weeks = []
+    for week in _cal.monthcalendar(year, month):
+        row = []
+        for day_num in week:
+            if day_num == 0:
+                row.append(None)
+            else:
+                d = _date(year, month, day_num)
+                execs = by_day.get(day_num, [])
+                row.append({
+                    "date": d,
+                    "day": day_num,
+                    "executions": execs[:3],
+                    "extra": max(0, len(execs) - 3),
+                })
+        weeks.append(row)
+
+    # Prev / next month navigation
+    if month == 1:
+        prev_ref = _date(year - 1, 12, 1)
+    else:
+        prev_ref = _date(year, month - 1, 1)
+    if month == 12:
+        next_ref = _date(year + 1, 1, 1)
+    else:
+        next_ref = _date(year, month + 1, 1)
+
+    context = {
+        "weeks": weeks,
+        "year": year,
+        "month_name": _MONTHS_FR[month - 1],
+        "day_headers": _DAYS_FR_SHORT,
+        "prev_month": prev_ref.isoformat(),
+        "next_month": next_ref.isoformat(),
+        "today": today,
+        "app_name": "services",
+    }
+    return render(request, "services/calendar_month.html", context)
+
+
+@login_required
+def calendar_day(request):
+    selected = _parse_date(request.GET.get("date", ""))
+    today = timezone.now().date()
+
+    executions = (
+        ServiceExecution.objects
+        .filter(next_due_date=selected)
+        .select_related("client", "service")
+        .order_by("scheduled_time", "client__name")
+    )
+
+    context = {
+        "selected_date": selected,
+        "day_label": _DAYS_FR_LONG[selected.weekday()],
+        "executions": executions,
+        "prev_day": (selected - timedelta(days=1)).isoformat(),
+        "next_day": (selected + timedelta(days=1)).isoformat(),
+        "today": today,
+        "app_name": "services",
+    }
+    return render(request, "services/calendar_day.html", context)
+
+
+@login_required
+@require_POST
+def execution_confirm(request, pk):
+    execution = get_object_or_404(ServiceExecution, pk=pk)
+    execution.confirmed = not execution.confirmed
+    execution.save(update_fields=["confirmed"])
+    next_url = request.POST.get("next", "")
+    if next_url:
+        return redirect(next_url)
+    return redirect("services:calendar_week")
 
 
 @login_required

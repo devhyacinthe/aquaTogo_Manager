@@ -81,6 +81,15 @@ class ServiceExecution(models.Model):
     )
     is_completed = models.BooleanField(default=False)
     reminder_sent = models.BooleanField(default=False)
+    confirmed = models.BooleanField(
+        default=False,
+        help_text="Rendez-vous confirmé par le client.",
+    )
+    scheduled_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="Heure prévue du rendez-vous (optionnel).",
+    )
 
     class Meta:
         verbose_name = "Exécution de prestation"
