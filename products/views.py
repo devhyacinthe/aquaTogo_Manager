@@ -148,9 +148,21 @@ def product_adjust_stock(request, pk):
             raise ValueError("La quantit\u00e9 doit \u00eatre un entier positif.")
         if action == "add":
             product.increase_stock(quantity)
+            # Créer automatiquement une dépense "Achat de stock"
+            from datetime import date
+            from accounting.models import Expense
+            expense_amount = product.purchase_price * quantity
+            Expense.objects.create(
+                label=f"Réapprovisionnement : {product.name} × {quantity}",
+                category=Expense.Category.STOCK,
+                amount=expense_amount,
+                expense_date=date.today(),
+                note=f"Ajustement de stock automatique (+{quantity} unité(s)).",
+            )
             messages.success(
                 request,
-                f"Stock mis \u00e0 jour\u00a0: +{quantity} unit\u00e9(s). Nouveau stock\u00a0: {product.stock_quantity}.",
+                f"Stock mis à jour : +{quantity} unité(s). Nouveau stock : {product.stock_quantity}. "
+                f"Dépense de {expense_amount:,.0f} FCFA enregistrée.",
             )
         elif action == "subtract":
             product.decrease_stock(quantity)

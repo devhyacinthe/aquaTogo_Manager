@@ -109,6 +109,118 @@ def expense_delete(request, pk):
 
 
 @login_required
+def expense_export_excel(request):
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from django.http import HttpResponse
+
+    periode = request.GET.get("periode", "month")
+    category_filter = request.GET.get("category", "")
+    start, end, periode_label = _period_range(periode)
+
+    qs = Expense.objects.all()
+    if start:
+        qs = qs.filter(expense_date__gte=start, expense_date__lte=end)
+    if category_filter:
+        qs = qs.filter(category=category_filter)
+    qs = qs.order_by("expense_date", "id")
+
+    total = qs.aggregate(
+        total=Coalesce(Sum("amount"), Value(Decimal("0.00")),
+                       output_field=DecimalField(max_digits=14, decimal_places=2))
+    )["total"]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Dépenses"
+
+    BRAND_BLUE = "1E40AF"
+    LIGHT_BLUE = "DBEAFE"
+    GRAY_ROW   = "F9FAFB"
+    WHITE      = "FFFFFF"
+
+    thin = Side(style="thin", color="E5E7EB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Titre
+    ws.merge_cells("A1:E1")
+    title_cell = ws["A1"]
+    title_cell.value = f"Dépenses — {periode_label}"
+    title_cell.font = Font(name="Calibri", bold=True, size=14, color=WHITE)
+    title_cell.fill = PatternFill("solid", fgColor=BRAND_BLUE)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+
+    # En-têtes
+    headers = ["Date", "Libellé", "Catégorie", "Note", "Montant (FCFA)"]
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=2, column=col, value=h)
+        cell.font = Font(name="Calibri", bold=True, size=11, color=WHITE)
+        cell.fill = PatternFill("solid", fgColor=BRAND_BLUE)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+    ws.row_dimensions[2].height = 22
+
+    category_labels = dict(Expense.Category.choices)
+
+    for i, expense in enumerate(qs):
+        row = i + 3
+        fill = PatternFill("solid", fgColor=GRAY_ROW if i % 2 == 0 else WHITE)
+
+        cells = [
+            (1, expense.expense_date.strftime("%d/%m/%Y")),
+            (2, expense.label),
+            (3, category_labels.get(expense.category, expense.category)),
+            (4, expense.note or ""),
+            (5, float(expense.amount)),
+        ]
+        for col, val in cells:
+            c = ws.cell(row=row, column=col, value=val)
+            c.fill = fill
+            c.font = Font(name="Calibri", size=10)
+            c.border = border
+            if col == 5:
+                c.number_format = '#,##0'
+                c.alignment = Alignment(horizontal="right")
+
+    # Ligne total
+    total_row = qs.count() + 3
+    ws.merge_cells(f"A{total_row}:D{total_row}")
+    label_cell = ws.cell(row=total_row, column=1, value="TOTAL")
+    label_cell.font = Font(name="Calibri", bold=True, size=11, color=WHITE)
+    label_cell.fill = PatternFill("solid", fgColor=BRAND_BLUE)
+    label_cell.alignment = Alignment(horizontal="right", vertical="center")
+    label_cell.border = border
+
+    total_cell = ws.cell(row=total_row, column=5, value=float(total))
+    total_cell.font = Font(name="Calibri", bold=True, size=11, color=WHITE)
+    total_cell.fill = PatternFill("solid", fgColor=BRAND_BLUE)
+    total_cell.number_format = '#,##0'
+    total_cell.alignment = Alignment(horizontal="right")
+    total_cell.border = border
+    ws.row_dimensions[total_row].height = 22
+
+    # Largeurs colonnes
+    col_widths = [14, 40, 22, 35, 18]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"depenses_{periode}.xlsx"
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
 def accounting_report(request):
     from sales.models import Payment
 
