@@ -1,11 +1,13 @@
 import json as _json
 from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
-from django.db.models import F, Sum
+from django.db.models import Case, DecimalField, ExpressionWrapper, F, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
@@ -29,24 +31,44 @@ class AquaLogoutView(LogoutView):
 @login_required
 def dashboard(request):
     from products.models import Product
-    from sales.models import Sale, SaleItem
+    from sales.models import Payment, Sale, SaleItem
     from services.models import ServiceExecution
 
     today = timezone.now().date()
     start_of_week = today - timedelta(days=today.weekday())
     start_of_month = today.replace(day=1)
 
-    def sales_stats(qs):
-        agg = qs.aggregate(ca=Sum("total_amount"), profit=Sum("total_profit"))
+    _zero = Value(Decimal("0.00"))
+    _df = DecimalField(max_digits=14, decimal_places=2)
+
+    # CA = argent encaissé (payment_date), profit = proportion du bénéfice de la vente
+    def payment_stats(start, end):
+        qs = Payment.objects.filter(payment_date__gte=start, payment_date__lte=end).annotate(
+            prop_profit=Case(
+                When(
+                    sale__total_amount__gt=0,
+                    then=ExpressionWrapper(
+                        F("amount") * F("sale__total_profit") / F("sale__total_amount"),
+                        output_field=_df,
+                    ),
+                ),
+                default=_zero,
+                output_field=_df,
+            )
+        )
+        agg = qs.aggregate(
+            ca=Coalesce(Sum("amount"), _zero, output_field=_df),
+            profit=Coalesce(Sum("prop_profit"), _zero, output_field=_df),
+        )
         return {
-            "ca": agg["ca"] or 0,
-            "profit": agg["profit"] or 0,
-            "count": qs.count(),
+            "ca": agg["ca"],
+            "profit": agg["profit"],
+            "count": qs.values("sale").distinct().count(),
         }
 
-    stats_day   = sales_stats(Sale.objects.filter(sale_date=today))
-    stats_week  = sales_stats(Sale.objects.filter(sale_date__gte=start_of_week))
-    stats_month = sales_stats(Sale.objects.filter(sale_date__gte=start_of_month))
+    stats_day   = payment_stats(today, today)
+    stats_week  = payment_stats(start_of_week, today)
+    stats_month = payment_stats(start_of_month, today)
 
     top_products = (
         SaleItem.objects.filter(product__isnull=False, sale__sale_date__gte=start_of_month)
@@ -75,16 +97,46 @@ def dashboard(request):
 
     unpaid_count = Sale.objects.filter(payment_status__in=["unpaid", "partial"]).count()
 
-    # ── Graphe — évolution sur 30 jours ──────────────────────────────────────
+    tomorrow = today + timedelta(days=1)
+    due_tomorrow = (
+        ServiceExecution.objects.filter(
+            is_completed=False, next_due_date=tomorrow
+        )
+        .select_related("client", "service")
+        .order_by("client__name")
+    )
+
+    from accounting.models import Expense
+    total_expenses_month = (
+        Expense.objects.filter(expense_date__gte=start_of_month)
+        .aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    )
+    net_profit_month = (stats_month["profit"] or Decimal("0.00")) - total_expenses_month
+
+    # ── Graphe — évolution sur 30 jours (par date d'encaissement) ────────────
     chart_start = today - timedelta(days=29)
     daily_rows = (
-        Sale.objects
-        .filter(sale_date__gte=chart_start, sale_date__lte=today)
-        .values("sale_date")
-        .annotate(ca=Sum("total_amount"), profit=Sum("total_profit"))
-        .order_by("sale_date")
+        Payment.objects
+        .filter(payment_date__gte=chart_start, payment_date__lte=today)
+        .annotate(
+            prop_profit=Case(
+                When(
+                    sale__total_amount__gt=0,
+                    then=ExpressionWrapper(
+                        F("amount") * F("sale__total_profit") / F("sale__total_amount"),
+                        output_field=_df,
+                    ),
+                ),
+                default=_zero,
+                output_field=_df,
+            )
+        )
+        .values("payment_date")
+        .annotate(ca=Sum("amount"), profit=Sum("prop_profit"))
+        .order_by("payment_date")
     )
-    date_map = {row["sale_date"]: row for row in daily_rows}
+    date_map = {row["payment_date"]: row for row in daily_rows}
 
     chart_labels, chart_ca, chart_profit = [], [], []
     for i in range(30):
@@ -98,12 +150,15 @@ def dashboard(request):
         "stats_day":   stats_day,
         "stats_week":  stats_week,
         "stats_month": stats_month,
+        "total_expenses_month": total_expenses_month,
+        "net_profit_month": net_profit_month,
         "top_products": top_products,
         "top_services": top_services,
         "low_stock": low_stock,
         "upcoming_executions": upcoming_executions,
         "unpaid_count": unpaid_count,
         "today": today,
+        "due_tomorrow": due_tomorrow,
         "chart_labels":  _json.dumps(chart_labels),
         "chart_ca":      _json.dumps(chart_ca),
         "chart_profit":  _json.dumps(chart_profit),

@@ -19,6 +19,25 @@
     </div>
   </div>
 
+  <!-- Période pills -->
+  <div class="flex gap-2 flex-wrap">
+    <a href="?periode=today"
+       class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+         {% if periode == 'today' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+      Aujourd'hui
+    </a>
+    <a href="?periode=week"
+       class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+         {% if periode == 'week' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+      Cette semaine
+    </a>
+    <a href="?periode=all"
+       class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+         {% if periode == 'all' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+      Toutes
+    </a>
+  </div>
+
   {% if executions %}
 
   <!-- Overdue -->

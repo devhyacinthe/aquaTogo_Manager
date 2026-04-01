@@ -8,12 +8,31 @@
   {# ── En-tête ────────────────────────────────────────────────────────────── #}
   <div class="flex items-center justify-between gap-3">
     <h1 class="text-xl font-bold text-gray-900">Ventes</h1>
-    <a href="{% url 'sales:create' %}" class="btn-primary flex items-center gap-1.5">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-      </svg>
-      Nouvelle vente
-    </a>
+    <div class="flex items-center gap-2 shrink-0">
+      {% if period == 'today' %}
+      <a href="{% url 'sales:export_excel' %}"
+         class="btn-secondary text-sm">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+        </svg>
+        Excel
+      </a>
+      {% else %}
+      <a href="{% url 'sales:export_csv' %}?periode={{ period }}"
+         class="btn-secondary text-sm">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+        </svg>
+        CSV
+      </a>
+      {% endif %}
+      <a href="{% url 'sales:create' %}" class="btn-primary flex items-center gap-1.5">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+        </svg>
+        Nouvelle vente
+      </a>
+    </div>
   </div>
 
   {# ── Filtres période ────────────────────────────────────────────────────── #}

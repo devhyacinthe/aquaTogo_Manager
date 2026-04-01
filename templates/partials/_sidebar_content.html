@@ -75,7 +75,7 @@
   <div class="my-2 border-t border-gray-100"></div>
   <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Finance</p>
 
-  <a href="#"
+  <a href="{% url 'accounting:list' %}"
      class="nav-link {% if request.resolver_match.app_name == 'accounting' %}active{% endif %}">
     <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round"

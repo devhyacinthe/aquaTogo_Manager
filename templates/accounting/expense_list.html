@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Dépenses{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Dépenses</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Suivez vos charges et dépenses</p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <a href="{% url 'accounting:report' %}?periode={{ periode }}"
+         class="btn-secondary text-sm">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/>
+        </svg>
+        Rapport P&L
+      </a>
+      <a href="{% url 'accounting:create' %}" class="btn-primary">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+        </svg>
+        Nouvelle
+      </a>
+    </div>
+  </div>
+
+  <!-- Stats chips -->
+  <div class="flex gap-2 flex-wrap">
+    <span class="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
+      {{ expense_count }} dépense{{ expense_count|pluralize }}
+    </span>
+    <span class="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+      </svg>
+      {{ total_expenses|floatformat:0 }} FCFA
+    </span>
+    <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+      {{ periode_label }}
+    </span>
+  </div>
+
+  <!-- Période pills -->
+  <div class="space-y-2">
+    <div class="flex gap-2 flex-wrap">
+      <a href="?periode=today{% if category_filter %}&category={{ category_filter }}{% endif %}"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if periode == 'today' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Aujourd'hui
+      </a>
+      <a href="?periode=week{% if category_filter %}&category={{ category_filter }}{% endif %}"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if periode == 'week' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Semaine
+      </a>
+      <a href="?periode=month{% if category_filter %}&category={{ category_filter }}{% endif %}"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if periode == 'month' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Ce mois
+      </a>
+      <a href="?periode=all{% if category_filter %}&category={{ category_filter }}{% endif %}"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if periode == 'all' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Tout
+      </a>
+    </div>
+
+    <!-- Catégorie pills -->
+    <div class="flex gap-2 flex-wrap">
+      <a href="?periode={{ periode }}"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if not category_filter %}bg-gray-700 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        Toutes
+      </a>
+      {% for cat_val, cat_display in categories %}
+      <a href="?periode={{ periode }}&category={{ cat_val }}"
+         class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
+           {% if category_filter == cat_val %}bg-gray-700 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        {{ cat_display }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Expense list -->
+  {% if expenses %}
+  <div class="card divide-y divide-gray-100 p-0 overflow-hidden">
+    {% for expense in expenses %}
+    <div class="flex items-center gap-3 px-4 py-3">
+
+      <div class="flex-1 min-w-0">
+        <p class="font-medium text-gray-900 truncate">{{ expense.label }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">{{ expense.expense_date|date:"d/m/Y" }}</p>
+      </div>
+
+      <div class="shrink-0">
+        {% if expense.category == 'stock' %}
+        <span class="badge-blue">{{ expense.get_category_display }}</span>
+        {% elif expense.category == 'transport' %}
+        <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">{{ expense.get_category_display }}</span>
+        {% elif expense.category == 'equipment' %}
+        <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800">{{ expense.get_category_display }}</span>
+        {% elif expense.category == 'utilities' %}
+        <span class="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">{{ expense.get_category_display }}</span>
+        {% else %}
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ expense.get_category_display }}</span>
+        {% endif %}
+      </div>
+
+      <div class="shrink-0 text-right">
+        <p class="font-bold text-gray-900">{{ expense.amount|floatformat:0 }} FCFA</p>
+      </div>
+
+      <div class="flex items-center gap-1 shrink-0">
+        <a href="{% url 'accounting:edit' expense.pk %}"
+           class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+           title="Modifier">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125"/>
+          </svg>
+        </a>
+        <form method="post" action="{% url 'accounting:delete' expense.pk %}"
+              x-data
+              @submit.prevent="if(confirm('Supprimer « {{ expense.label }} » ?')) $el.submit()">
+          {% csrf_token %}
+          <button type="submit"
+                  class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                  title="Supprimer">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- Empty state -->
+  <div class="card text-center py-12">
+    <div class="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-gray-100 mb-4">
+      <svg class="h-7 w-7 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+      </svg>
+    </div>
+    <h3 class="text-base font-semibold text-gray-900">Aucune dépense enregistrée</h3>
+    <p class="text-sm text-gray-500 mt-1">
+      {% if category_filter %}Pour cette catégorie sur la période sélectionnée.
+      {% else %}Commencez par enregistrer votre première dépense.{% endif %}
+    </p>
+    {% if not category_filter %}
+    <div class="mt-4">
+      <a href="{% url 'accounting:create' %}" class="btn-primary">Ajouter une dépense</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

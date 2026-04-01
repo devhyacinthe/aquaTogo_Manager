@@ -128,17 +128,29 @@ def service_delete(request, pk):
 
 @login_required
 def execution_list(request):
+    from datetime import timedelta
     today = timezone.now().date()
-    executions = (
+    periode = request.GET.get("periode", "week")
+
+    qs = (
         ServiceExecution.objects
         .filter(is_completed=False, next_due_date__isnull=False)
         .select_related("client", "service")
         .order_by("next_due_date")
     )
 
+    if periode == "today":
+        qs = qs.filter(next_due_date__lte=today)
+    elif periode == "all":
+        pass  # tout afficher
+    else:
+        periode = "week"
+        qs = qs.filter(next_due_date__lte=today + timedelta(days=6))
+
     context = {
-        "executions": executions,
+        "executions": qs,
         "today": today,
+        "periode": periode,
         "app_name": "services",
         "url_name": "execution_list",
     }

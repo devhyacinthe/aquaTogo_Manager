@@ -1,3 +1,4 @@
+import csv
 import json as _json
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
@@ -5,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
@@ -296,3 +297,345 @@ def api_services(_request):
         for s in services
     ]
     return JsonResponse(data, safe=False)
+
+
+# ── sale_export_excel ─────────────────────────────────────────────────────────
+
+@login_required
+@require_GET
+def sale_export_excel(request):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from io import BytesIO
+
+    today = date.today()
+    sales = (
+        Sale.objects
+        .filter(sale_date=today)
+        .select_related("client", "created_by")
+        .prefetch_related("items__product", "items__service")
+        .order_by("pk")
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Ventes {today.strftime('%d-%m-%Y')}"
+
+    brand_blue = "0EA5E9"
+    light_blue = "E0F2FE"
+
+    # ── Titre ─────────────────────────────────────────────────────────────────
+    ws.merge_cells("A1:F1")
+    ws["A1"] = f"AquaTogo — Résumé des ventes du {today.strftime('%d/%m/%Y')}"
+    ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
+    ws["A1"].fill = PatternFill("solid", fgColor=brand_blue)
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+
+    # ── En-têtes colonnes ─────────────────────────────────────────────────────
+    headers = ["#Vente", "Client", "Articles", "Statut", "Montant (FCFA)", "Bénéfice (FCFA)"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=2, column=col, value=header)
+        cell.font = Font(bold=True, color="FFFFFF", size=10)
+        cell.fill = PatternFill("solid", fgColor="0369A1")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 22
+
+    # ── Données ───────────────────────────────────────────────────────────────
+    sales_list = list(sales)
+    for i, sale in enumerate(sales_list):
+        row = 3 + i
+        articles = ", ".join(
+            item.product.name if item.product else (item.service.name if item.service else "—")
+            for item in sale.items.all()
+        )
+        bg = "F8FAFC" if i % 2 == 0 else "FFFFFF"
+        values = [
+            sale.pk,
+            sale.client.name if sale.client else "Anonyme",
+            articles,
+            sale.get_payment_status_display(),
+            float(sale.total_amount),
+            float(sale.total_profit),
+        ]
+        for col, val in enumerate(values, 1):
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.fill = PatternFill("solid", fgColor=bg)
+            cell.alignment = Alignment(vertical="center", wrap_text=(col == 3))
+            if col in (5, 6):
+                cell.number_format = "#,##0"
+            if col == 6:
+                cell.font = Font(color="15803D")
+
+    # ── Ligne total ───────────────────────────────────────────────────────────
+    total_row = 3 + len(sales_list)
+    total_ca = sum(float(s.total_amount) for s in sales_list)
+    total_profit = sum(float(s.total_profit) for s in sales_list)
+
+    ws.cell(row=total_row, column=4, value="TOTAL").font = Font(bold=True, size=10)
+    ws.cell(row=total_row, column=4).fill = PatternFill("solid", fgColor=light_blue)
+
+    for col, val in [(5, total_ca), (6, total_profit)]:
+        cell = ws.cell(row=total_row, column=col, value=val)
+        cell.font = Font(bold=True, size=10, color="15803D" if col == 6 else "000000")
+        cell.fill = PatternFill("solid", fgColor=light_blue)
+        cell.number_format = "#,##0"
+
+    # ── Largeurs colonnes ─────────────────────────────────────────────────────
+    ws.column_dimensions["A"].width = 9
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 42
+    ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["E"].width = 18
+    ws.column_dimensions["F"].width = 18
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    filename = f"ventes_{today.strftime('%Y%m%d')}.xlsx"
+    response = HttpResponse(
+        buffer,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+# ── sale_invoice_pdf ──────────────────────────────────────────────────────────
+
+@login_required
+def sale_invoice_pdf(request, pk):
+    import os
+    from io import BytesIO
+    from django.conf import settings
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image,
+    )
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+
+    sale = get_object_or_404(Sale, pk=pk)
+    items = list(sale.items.select_related("product", "service").all())
+    payments = list(sale.payments.all())
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+        leftMargin=2.5 * cm,
+        rightMargin=2.5 * cm,
+    )
+
+    brand = colors.HexColor("#0EA5E9")
+    gray  = colors.HexColor("#6B7280")
+    light = colors.HexColor("#F0F9FF")
+
+    def _p(text, **kw):
+        return Paragraph(text, ParagraphStyle("_", **kw))
+
+    story = []
+
+    # ── En-tête boutique ──────────────────────────────────────────────────────
+    logo_path = os.path.join(settings.BASE_DIR, "static", "img", "logo.png")
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=1.4 * cm, height=1.4 * cm)
+        name_cell = _p(
+            '<font size="18" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="9" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+        left_col = Table([[logo_cell, name_cell]], colWidths=[1.6 * cm, 8 * cm])
+        left_col.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (1, 0), (1, 0), 6)]))
+    else:
+        left_col = _p(
+            '<font size="18" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="9" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+
+    header_data = [[
+        left_col,
+        _p(f'<font size="9" color="#6B7280">Date : {sale.sale_date.strftime("%d/%m/%Y")}<br/>'
+           f'Vendeur : {sale.created_by.get_full_name() or sale.created_by.username}</font>',
+           alignment=TA_RIGHT),
+    ]]
+    ht = Table(header_data, colWidths=[10 * cm, 7.5 * cm])
+    ht.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    story.append(ht)
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=brand))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Numéro de facture + client ─────────────────────────────────────────────
+    client_name = sale.client.name if sale.client else "Client anonyme"
+    client_phone = getattr(sale.client, "phone", "") if sale.client else ""
+    status_colors = {"paid": "#15803D", "partial": "#D97706", "unpaid": "#DC2626"}
+    s_color = status_colors.get(sale.payment_status, "#374151")
+
+    info_data = [[
+        _p(f'<font size="14"><b>FACTURE N° {sale.pk:04d}</b></font><br/>'
+           f'<font size="9" color="{s_color}"><b>● {sale.get_payment_status_display()}</b></font>'),
+        _p('<b>Client</b><br/>'
+           f'<font size="10">{client_name}</font>'
+           + (f'<br/><font size="9" color="#6B7280">Tél : {client_phone}</font>' if client_phone else "")),
+    ]]
+    it = Table(info_data, colWidths=[9 * cm, 8.5 * cm])
+    it.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (1, 0), (1, 0), light),
+        ("LEFTPADDING", (1, 0), (1, 0), 10),
+        ("TOPPADDING", (1, 0), (1, 0), 8),
+        ("BOTTOMPADDING", (1, 0), (1, 0), 8),
+        ("RIGHTPADDING", (1, 0), (1, 0), 10),
+    ]))
+    story.append(it)
+    story.append(Spacer(1, 0.7 * cm))
+
+    # ── Tableau articles ───────────────────────────────────────────────────────
+    def _fmt(n):
+        return f"{n:,.0f}".replace(",", "\u202f")
+
+    rows = [[
+        _p("<b>Article</b>", fontSize=9),
+        _p("<b>Qté</b>", fontSize=9, alignment=TA_RIGHT),
+        _p("<b>Prix unit. (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+        _p("<b>Total (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+    ]]
+    for item in items:
+        name = item.product.name if item.product else (item.service.name if item.service else "—")
+        rows.append([
+            _p(name, fontSize=9),
+            _p(str(item.quantity), fontSize=9, alignment=TA_RIGHT),
+            _p(_fmt(item.unit_price), fontSize=9, alignment=TA_RIGHT),
+            _p(_fmt(item.line_total), fontSize=9, alignment=TA_RIGHT),
+        ])
+    rows.append([
+        "", "",
+        _p("<b>TOTAL</b>", fontSize=10, alignment=TA_RIGHT),
+        _p(f"<b>{_fmt(sale.total_amount)} FCFA</b>", fontSize=10, alignment=TA_RIGHT),
+    ])
+
+    at = Table(rows, colWidths=[9.5 * cm, 2 * cm, 3.5 * cm, 3.5 * cm])
+    at.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), brand),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("BACKGROUND", (0, -1), (-1, -1), light),
+        ("LINEABOVE", (0, -1), (-1, -1), 1, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(at)
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Paiements ─────────────────────────────────────────────────────────────
+    if payments:
+        story.append(_p("<b>Paiements reçus</b>", fontSize=10))
+        story.append(Spacer(1, 0.25 * cm))
+
+        pay_rows = [[
+            _p("<b>Date</b>", fontSize=9),
+            _p("<b>Méthode</b>", fontSize=9),
+            _p("<b>Montant (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+        ]]
+        for p in payments:
+            pay_rows.append([
+                _p(p.payment_date.strftime("%d/%m/%Y"), fontSize=9),
+                _p(p.get_payment_method_display(), fontSize=9),
+                _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
+            ])
+        if sale.remaining_balance > 0:
+            pay_rows.append([
+                "",
+                _p("<b>Reste à payer</b>", fontSize=9),
+                _p(f'<font color="#DC2626"><b>{_fmt(sale.remaining_balance)} FCFA</b></font>',
+                   fontSize=9, alignment=TA_RIGHT),
+            ])
+
+        pt = Table(pay_rows, colWidths=[4 * cm, 7 * cm, 4 * cm])
+        pt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+        ]))
+        story.append(pt)
+
+    # ── Pied de page ──────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1.2 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#E5E7EB")))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(_p("AquaTogo — Merci pour votre confiance !",
+                    fontSize=8, textColor=gray, alignment=TA_CENTER))
+
+    doc.build(story)
+    buffer.seek(0)
+
+    filename = f"Facture_AquaTogo_{sale.pk:04d}_{sale.sale_date.strftime('%Y%m%d')}.pdf"
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+# ── sale_export_csv ───────────────────────────────────────────────────────────
+
+@login_required
+@require_GET
+def sale_export_csv(request):
+    periode = request.GET.get("periode", "month")
+    today = date.today()
+
+    if periode == "week":
+        start = today - timedelta(days=today.weekday())
+        end = today
+        label = "semaine"
+    elif periode == "month":
+        start = today.replace(day=1)
+        end = today
+        label = "mois"
+    else:
+        periode = "today"
+        start = today
+        end = today
+        label = "jour"
+
+    sales = (
+        Sale.objects
+        .filter(sale_date__gte=start, sale_date__lte=end)
+        .select_related("client", "created_by")
+        .prefetch_related("items__product", "items__service")
+        .order_by("sale_date", "pk")
+    )
+
+    filename = f"ventes_{label}_{today.strftime('%Y%m%d')}.csv"
+    response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Date", "Client", "Articles", "Statut", "Montant (FCFA)", "Bénéfice (FCFA)"])
+
+    for sale in sales:
+        articles = ", ".join(
+            item.product.name if item.product else (item.service.name if item.service else "—")
+            for item in sale.items.all()
+        )
+        writer.writerow([
+            sale.sale_date.strftime("%d/%m/%Y"),
+            sale.client.name if sale.client else "Anonyme",
+            articles,
+            sale.get_payment_status_display(),
+            str(sale.total_amount),
+            str(sale.total_profit),
+        ])
+
+    return response

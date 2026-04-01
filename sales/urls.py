@@ -11,4 +11,7 @@ urlpatterns = [
     path("api/clients/", views.api_clients, name="api_clients"),
     path("api/produits/", views.api_products, name="api_products"),
     path("api/services/", views.api_services, name="api_services"),
+    path("export/csv/", views.sale_export_csv, name="export_csv"),
+    path("export/excel/", views.sale_export_excel, name="export_excel"),
+    path("<int:pk>/facture.pdf", views.sale_invoice_pdf, name="invoice_pdf"),
 ]

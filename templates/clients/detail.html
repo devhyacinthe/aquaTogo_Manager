@@ -60,6 +60,107 @@
     </div>
   </div>
 
+  <!-- Solder la dette -->
+  {% if client.has_debt %}
+  <div class="rounded-2xl border border-red-200 bg-red-50 overflow-hidden"
+       x-data="{ open: false, amount: '{{ client.outstanding_balance|floatformat:0 }}', method: 'cash', loading: false }">
+
+    <button type="button" @click="open = !open"
+            class="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
+      <div class="flex items-center gap-2">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
+          <svg class="h-4 w-4 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-red-800">Solde dû : {{ client.outstanding_balance|floatformat:0 }} FCFA</p>
+          <p class="text-xs text-red-500">Appuyer pour encaisser un paiement</p>
+        </div>
+      </div>
+      <svg class="h-4 w-4 text-red-400 transition-transform shrink-0" :class="open ? 'rotate-180' : ''"
+           fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+      </svg>
+    </button>
+
+    <div x-show="open" x-transition class="border-t border-red-200 bg-white px-4 py-4">
+      <form method="post" action="{% url 'clients:settle_debt' client.pk %}"
+            @submit="loading = true">
+        {% csrf_token %}
+        <input type="hidden" name="payment_method" x-model="method">
+
+        <div class="space-y-4">
+
+          <!-- Montant -->
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1.5">
+              Montant à encaisser (FCFA)
+            </label>
+            <div class="relative">
+              <input type="number"
+                     name="amount"
+                     x-model="amount"
+                     min="1"
+                     max="{{ client.outstanding_balance|floatformat:0 }}"
+                     step="1"
+                     required
+                     class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 pr-16 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors"/>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">FCFA</span>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">Maximum : {{ client.outstanding_balance|floatformat:0 }} FCFA</p>
+          </div>
+
+          <!-- Méthode -->
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1.5">Méthode de paiement</label>
+            <div class="flex gap-2 flex-wrap">
+              <button type="button" @click="method = 'cash'"
+                      :class="method === 'cash' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
+                      class="px-4 py-2 rounded-xl border text-sm font-medium transition-colors">
+                Espèces
+              </button>
+              <button type="button" @click="method = 'mobile_money'"
+                      :class="method === 'mobile_money' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
+                      class="px-4 py-2 rounded-xl border text-sm font-medium transition-colors">
+                Mobile Money
+              </button>
+              <button type="button" @click="method = 'bank'"
+                      :class="method === 'bank' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
+                      class="px-4 py-2 rounded-xl border text-sm font-medium transition-colors">
+                Virement
+              </button>
+            </div>
+          </div>
+
+          <!-- Date -->
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1.5">Date du paiement</label>
+            <input type="date"
+                   name="payment_date"
+                   value="{{ today|date:'Y-m-d' }}"
+                   required
+                   class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors"/>
+          </div>
+
+          <!-- Submit -->
+          <button type="submit"
+                  :disabled="loading"
+                  class="w-full btn-primary py-3 justify-center font-semibold disabled:opacity-50">
+            <svg x-show="loading" class="spinner-sm" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span x-show="!loading">Enregistrer le paiement</span>
+            <span x-show="loading">Enregistrement…</span>
+          </button>
+
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Financial summary -->
   <div class="grid grid-cols-3 gap-3">
     <div class="card text-center py-3 px-2">
