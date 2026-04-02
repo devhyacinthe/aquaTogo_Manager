@@ -15,7 +15,7 @@ _TEXTAREA_CLASSES = (
 class ServiceForm(forms.ModelForm):
     class Meta:
         model = Service
-        fields = ["name", "description", "price", "renewal_delay_days", "is_active"]
+        fields = ["name", "description", "price", "is_active"]
         widgets = {
             "name": forms.TextInput(attrs={
                 "class": _INPUT_CLASSES,
@@ -32,20 +32,10 @@ class ServiceForm(forms.ModelForm):
                 "step": "1",
                 "placeholder": "0",
             }),
-            "renewal_delay_days": forms.NumberInput(attrs={
-                "class": _INPUT_CLASSES.replace("px-3", "pl-3 pr-16"),
-                "min": "1",
-                "step": "1",
-                "placeholder": "Ex : 14",
-            }),
-        }
-        help_texts = {
-            "renewal_delay_days": "Laisser vide si prestation ponctuelle",
         }
         labels = {
             "name": "Nom de la prestation",
             "description": "Description",
             "price": "Prix (FCFA)",
-            "renewal_delay_days": "Délai de renouvellement (jours)",
             "is_active": "Prestation active",
         }

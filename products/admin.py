@@ -1,6 +1,13 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Product
+from .models import Product, ProductCategory
+
+
+@admin.register(ProductCategory)
+class ProductCategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug")
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
 
 
 @admin.register(Product)
@@ -23,7 +30,7 @@ class ProductAdmin(admin.ModelAdmin):
     search_fields = ("name", "description")
     list_editable = ("stock_quantity", "is_active")
     list_per_page = 30
-    ordering = ("category", "name")
+    ordering = ("category__name", "name")
 
     # ── Formulaire ───────────────────────────────────────────────────────────
 

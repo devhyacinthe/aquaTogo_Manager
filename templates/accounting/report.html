@@ -127,25 +127,64 @@
   </div>
   {% endif %}
 
-  <!-- Répartition revenus Produits / Services -->
+  <!-- Répartition revenus par catégorie -->
   {% if total_ca > 0 %}
   <div class="card">
     <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Répartition des revenus</h2>
     <div class="space-y-3">
+
+      {# Produits — total + sous-catégories #}
+      {% if pct_products %}
       <div>
         <div class="flex justify-between items-center mb-1">
-          <span class="text-sm text-gray-700">Produits</span>
+          <span class="text-sm font-medium text-gray-800">Produits</span>
           <span class="text-sm font-semibold text-gray-900">{{ rev_products|floatformat:0 }} FCFA
             <span class="text-xs font-normal text-gray-400 ml-1">{{ pct_products }}%</span>
           </span>
         </div>
-        <div class="w-full bg-gray-100 rounded-full h-1.5">
+        <div class="w-full bg-gray-100 rounded-full h-1.5 mb-2">
           <div class="bg-brand-500 h-1.5 rounded-full" style="width: {{ pct_products }}%"></div>
         </div>
+        {# Sous-catégories dynamiques #}
+        <div class="ml-3 space-y-2">
+          {% for cat in cat_breakdown_list %}
+          {% if cat.revenue %}
+          <div>
+            <div class="flex justify-between items-center mb-0.5">
+              <span class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="inline-block h-2 w-2 rounded-full
+                  {% if cat.slug == 'fish' %}bg-cyan-400
+                  {% elif cat.slug == 'accessory' %}bg-violet-400
+                  {% elif cat.slug == 'aquarium' %}bg-amber-400
+                  {% else %}bg-gray-400{% endif %}"></span>{{ cat.name }}
+              </span>
+              <span class="text-xs text-gray-700">{{ cat.revenue|floatformat:0 }} FCFA
+                <span class="text-gray-400">· {{ cat.pct|floatformat:1 }}%</span>
+              </span>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-1">
+              <div class="h-1 rounded-full
+                {% if cat.slug == 'fish' %}bg-cyan-400
+                {% elif cat.slug == 'accessory' %}bg-violet-400
+                {% elif cat.slug == 'aquarium' %}bg-amber-400
+                {% else %}bg-gray-400{% endif %}" style="width: {{ cat.pct }}%"></div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
       </div>
+      {% endif %}
+
+      {% if pct_products and pct_services %}<div class="border-t border-gray-100"></div>{% endif %}
+
+      {# Services #}
+      {% if pct_services %}
       <div>
         <div class="flex justify-between items-center mb-1">
-          <span class="text-sm text-gray-700">Services</span>
+          <span class="flex items-center gap-1.5 text-sm font-medium text-gray-800">
+            <span class="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>Prestations
+          </span>
           <span class="text-sm font-semibold text-gray-900">{{ rev_services|floatformat:0 }} FCFA
             <span class="text-xs font-normal text-gray-400 ml-1">{{ pct_services }}%</span>
           </span>
@@ -154,6 +193,8 @@
           <div class="bg-emerald-500 h-1.5 rounded-full" style="width: {{ pct_services }}%"></div>
         </div>
       </div>
+      {% endif %}
+
     </div>
   </div>
   {% endif %}
@@ -191,6 +232,16 @@
       Nouvelle dépense
     </a>
   </div>
+
+  <!-- Télécharger le rapport PDF -->
+  <a href="{% url 'accounting:report_pdf' %}?periode={{ periode }}"
+     class="flex items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 px-4 py-4 text-brand-700 font-medium text-sm hover:bg-brand-100 transition-colors">
+    <svg class="h-5 w-5 text-brand-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
+    </svg>
+    Télécharger le rapport PDF — {{ periode_label }}
+  </a>
 
 </div>
 {% endblock %}

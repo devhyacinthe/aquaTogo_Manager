@@ -3,18 +3,26 @@ from django.core.validators import MinValueValidator
 from decimal import Decimal
 
 
+class ProductCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=50, unique=True)
+
+    class Meta:
+        verbose_name = "Catégorie"
+        verbose_name_plural = "Catégories"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Product(models.Model):
 
-    class Category(models.TextChoices):
-        FISH = "fish", "Poisson"
-        ACCESSORY = "accessory", "Accessoire"
-        AQUARIUM = "aquarium", "Aquarium"
-
     name = models.CharField(max_length=200)
-    category = models.CharField(
-        max_length=20,
-        choices=Category.choices,
-        default=Category.ACCESSORY,
+    category = models.ForeignKey(
+        ProductCategory,
+        on_delete=models.PROTECT,
+        related_name="products",
     )
     description = models.TextField(blank=True)
     purchase_price = models.DecimalField(
@@ -41,15 +49,14 @@ class Product(models.Model):
     class Meta:
         verbose_name = "Produit"
         verbose_name_plural = "Produits"
-        ordering = ["name"]
+        ordering = ["category__name", "name"]
         indexes = [
             models.Index(fields=["is_active"], name="product_is_active_idx"),
-            models.Index(fields=["category"], name="product_category_idx"),
             models.Index(fields=["name"], name="product_name_idx"),
         ]
 
     def __str__(self):
-        return f"[{self.get_category_display()}] {self.name}"
+        return f"[{self.category.name}] {self.name}"
 
     @property
     def margin(self) -> Decimal:

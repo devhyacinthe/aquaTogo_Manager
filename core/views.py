@@ -7,9 +7,11 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
 from django.db.models import Case, DecimalField, ExpressionWrapper, F, Sum, Value, When
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncMonth, TruncDay
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_GET
 
 from .forms import PasswordUpdateForm, ProfileForm
 from .models import UserProfile
@@ -72,7 +74,7 @@ def dashboard(request):
 
     top_products = (
         SaleItem.objects.filter(product__isnull=False, sale__sale_date__gte=start_of_month)
-        .values("product__name", "product__category")
+        .values("product__name", "product__category__name")
         .annotate(total_qty=Sum("quantity"), total_revenue=Sum("line_total"))
         .order_by("-total_qty")[:5]
     )
@@ -138,13 +140,24 @@ def dashboard(request):
     )
     date_map = {row["payment_date"]: row for row in daily_rows}
 
-    chart_labels, chart_ca, chart_profit = [], [], []
+    expense_rows = (
+        Expense.objects
+        .filter(expense_date__gte=chart_start, expense_date__lte=today)
+        .values("expense_date")
+        .annotate(total=Sum("amount"))
+        .order_by("expense_date")
+    )
+    expense_date_map = {row["expense_date"]: row for row in expense_rows}
+
+    chart_labels, chart_ca, chart_profit, chart_expenses = [], [], [], []
     for i in range(30):
         d = chart_start + timedelta(days=i)
         chart_labels.append(d.strftime("%d/%m"))
         row = date_map.get(d)
         chart_ca.append(float(row["ca"]) if row else 0)
         chart_profit.append(float(row["profit"]) if row else 0)
+        exp_row = expense_date_map.get(d)
+        chart_expenses.append(float(exp_row["total"]) if exp_row else 0)
 
     return render(request, "core/dashboard.html", {
         "stats_day":   stats_day,
@@ -159,9 +172,10 @@ def dashboard(request):
         "unpaid_count": unpaid_count,
         "today": today,
         "due_tomorrow": due_tomorrow,
-        "chart_labels":  _json.dumps(chart_labels),
-        "chart_ca":      _json.dumps(chart_ca),
-        "chart_profit":  _json.dumps(chart_profit),
+        "chart_labels":   _json.dumps(chart_labels),
+        "chart_ca":       _json.dumps(chart_ca),
+        "chart_profit":   _json.dumps(chart_profit),
+        "chart_expenses": _json.dumps(chart_expenses),
     })
 
 
@@ -201,4 +215,104 @@ def profile(request):
         "profile_form": profile_form,
         "password_form": password_form,
         "active_tab": active_tab,
+    })
+
+
+@login_required
+@require_GET
+def dashboard_chart_data(request):
+    from sales.models import Payment
+    from accounting.models import Expense
+
+    period = request.GET.get("period", "month")
+    today = timezone.now().date()
+
+    _zero = Value(Decimal("0.00"))
+    _df = DecimalField(max_digits=14, decimal_places=2)
+
+    if period == "week":
+        chart_start = today - timedelta(days=6)
+        trunc_fn = TruncDay
+        date_fmt = "%d/%m"
+        days_range = [(chart_start + timedelta(days=i)) for i in range(7)]
+        key_fn = lambda d: d  # noqa: E731
+    elif period == "year":
+        from dateutil.relativedelta import relativedelta
+        chart_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        chart_start = chart_start - timedelta(days=11 * 30)
+        chart_start = chart_start.replace(day=1)
+        trunc_fn = TruncMonth
+        date_fmt = "%b %Y"
+        days_range = [chart_start + timedelta(days=i * 30) for i in range(12)]
+        days_range = [d.replace(day=1) for d in days_range]
+        key_fn = lambda d: d.replace(day=1)  # noqa: E731
+    elif period == "5years":
+        from dateutil.relativedelta import relativedelta
+        chart_start = today.replace(day=1, month=1) - timedelta(days=4 * 365)
+        chart_start = chart_start.replace(day=1)
+        trunc_fn = TruncMonth
+        date_fmt = "%b %Y"
+        days_range = [chart_start + timedelta(days=i * 30) for i in range(60)]
+        days_range = [d.replace(day=1) for d in days_range]
+        # deduplicate while preserving order
+        seen = set()
+        days_range = [d for d in days_range if not (d in seen or seen.add(d))]
+        key_fn = lambda d: d.replace(day=1)  # noqa: E731
+    else:  # month (default)
+        chart_start = today - timedelta(days=29)
+        trunc_fn = TruncDay
+        date_fmt = "%d/%m"
+        days_range = [(chart_start + timedelta(days=i)) for i in range(30)]
+        key_fn = lambda d: d  # noqa: E731
+
+    # Payments
+    pay_rows = (
+        Payment.objects
+        .filter(payment_date__gte=chart_start, payment_date__lte=today)
+        .annotate(
+            prop_profit=Case(
+                When(
+                    sale__total_amount__gt=0,
+                    then=ExpressionWrapper(
+                        F("amount") * F("sale__total_profit") / F("sale__total_amount"),
+                        output_field=_df,
+                    ),
+                ),
+                default=_zero,
+                output_field=_df,
+            ),
+            period=trunc_fn("payment_date"),
+        )
+        .values("period")
+        .annotate(ca=Sum("amount"), profit=Sum("prop_profit"))
+        .order_by("period")
+    )
+    pay_map = {row["period"].date() if hasattr(row["period"], "date") else row["period"]: row for row in pay_rows}
+
+    # Expenses
+    exp_rows = (
+        Expense.objects
+        .filter(expense_date__gte=chart_start, expense_date__lte=today)
+        .annotate(period=trunc_fn("expense_date"))
+        .values("period")
+        .annotate(total=Sum("amount"))
+        .order_by("period")
+    )
+    exp_map = {row["period"].date() if hasattr(row["period"], "date") else row["period"]: row for row in exp_rows}
+
+    labels, ca_data, profit_data, expense_data = [], [], [], []
+    for d in days_range:
+        k = key_fn(d)
+        labels.append(d.strftime(date_fmt))
+        pay = pay_map.get(k)
+        ca_data.append(float(pay["ca"]) if pay else 0)
+        profit_data.append(float(pay["profit"]) if pay else 0)
+        exp = exp_map.get(k)
+        expense_data.append(float(exp["total"]) if exp else 0)
+
+    return JsonResponse({
+        "labels": labels,
+        "ca": ca_data,
+        "profit": profit_data,
+        "expenses": expense_data,
     })

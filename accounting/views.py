@@ -237,9 +237,15 @@ def accounting_report(request):
 
     # On calcule product_revenue et service_revenue par vente via Python
     # (plus simple et fiable que de sous-annoter depuis Payment)
-    pay_list = list(pay_qs.select_related("sale").prefetch_related("sale__items"))
+    pay_list = list(pay_qs.select_related("sale").prefetch_related(
+        "sale__items__product", "sale__items__service"
+    ))
 
-    total_ca    = Decimal("0.00")
+    from products.models import ProductCategory
+    all_cats = list(ProductCategory.objects.order_by("name"))
+    cat_revenues = {cat.slug: Decimal("0.00") for cat in all_cats}
+
+    total_ca     = Decimal("0.00")
     gross_profit = Decimal("0.00")
     rev_products = Decimal("0.00")
     rev_services = Decimal("0.00")
@@ -252,18 +258,28 @@ def accounting_report(request):
         if sale.total_amount > 0:
             prop = payment.amount / sale.total_amount
             gross_profit += sale.total_profit * prop
-            prod_total = sum(
-                item.line_total for item in sale.items.all() if item.product_id
-            )
-            svc_total = sum(
-                item.line_total for item in sale.items.all() if item.service_id
-            )
-            rev_products += prop * prod_total
-            rev_services += prop * svc_total
+            for item in sale.items.all():
+                if item.product_id and item.product:
+                    rev_products += prop * item.line_total
+                    cat_slug = item.product.category.slug
+                    if cat_slug in cat_revenues:
+                        cat_revenues[cat_slug] += prop * item.line_total
+                elif item.service_id:
+                    rev_services += prop * item.line_total
 
     sale_count = len(sale_ids)
     pct_products = int(rev_products / total_ca * 100) if total_ca > 0 else 0
     pct_services = int(rev_services / total_ca * 100) if total_ca > 0 else 0
+
+    cat_breakdown_list = [
+        {
+            "slug": cat.slug,
+            "name": cat.name,
+            "revenue": cat_revenues.get(cat.slug, Decimal("0.00")),
+            "pct": round(float(cat_revenues.get(cat.slug, Decimal("0.00")) / total_ca * 100), 1) if total_ca > 0 else 0,
+        }
+        for cat in all_cats
+    ]
 
     expense_qs = Expense.objects.all()
     if start:
@@ -311,11 +327,330 @@ def accounting_report(request):
         "expense_count": expense_qs.count(),
         "periode": periode,
         "periode_label": periode_label,
-        "rev_products": rev_products,
-        "rev_services": rev_services,
-        "pct_products": pct_products,
-        "pct_services": pct_services,
+        "rev_products":      rev_products,
+        "rev_services":      rev_services,
+        "pct_products":      pct_products,
+        "pct_services":      pct_services,
+        "cat_breakdown_list": cat_breakdown_list,
         "capital_actuel": capital_actuel,
         "capital_positif": capital_actuel >= 0,
     }
     return render(request, "accounting/report.html", context)
+
+
+@login_required
+def report_pdf(request):
+    import os
+    from io import BytesIO
+    from django.conf import settings
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+        HRFlowable, Image, KeepTogether,
+    )
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
+
+    from sales.models import Payment
+
+    periode = request.GET.get("periode", "month")
+    start, end, periode_label = _period_range(periode)
+
+    _zero = Value(Decimal("0.00"))
+    _df = DecimalField(max_digits=14, decimal_places=2)
+
+    pay_qs = Payment.objects.all()
+    if start:
+        pay_qs = pay_qs.filter(payment_date__gte=start, payment_date__lte=end)
+
+    pay_list = list(pay_qs.select_related("sale").prefetch_related(
+        "sale__items__product", "sale__items__service"
+    ))
+
+    from products.models import ProductCategory
+    all_cats_pdf = list(ProductCategory.objects.order_by("name"))
+    cat_revenues_pdf = {cat.slug: Decimal("0.00") for cat in all_cats_pdf}
+
+    total_ca     = Decimal("0.00")
+    gross_profit = Decimal("0.00")
+    rev_products  = Decimal("0.00")
+    rev_services  = Decimal("0.00")
+    sale_ids = set()
+
+    for payment in pay_list:
+        sale = payment.sale
+        total_ca += payment.amount
+        sale_ids.add(sale.id)
+        if sale.total_amount > 0:
+            prop = payment.amount / sale.total_amount
+            gross_profit += sale.total_profit * prop
+            for item in sale.items.all():
+                if item.product_id and item.product:
+                    rev_products += prop * item.line_total
+                    cat_slug = item.product.category.slug
+                    if cat_slug in cat_revenues_pdf:
+                        cat_revenues_pdf[cat_slug] += prop * item.line_total
+                elif item.service_id:
+                    rev_services += prop * item.line_total
+
+    cat_breakdown_pdf = [
+        {
+            "slug": cat.slug,
+            "name": cat.name,
+            "revenue": cat_revenues_pdf.get(cat.slug, Decimal("0.00")),
+        }
+        for cat in all_cats_pdf
+    ]
+
+    expense_qs = Expense.objects.all()
+    if start:
+        expense_qs = expense_qs.filter(expense_date__gte=start, expense_date__lte=end)
+
+    total_expenses = expense_qs.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    expenses_by_category = list(
+        expense_qs.values("category")
+        .annotate(subtotal=Sum("amount"))
+        .order_by("-subtotal")
+    )
+    category_labels = dict(Expense.Category.choices)
+    for row in expenses_by_category:
+        row["cat_label"] = category_labels.get(row["category"], row["category"])
+
+    net_profit    = gross_profit - total_expenses
+    cogs          = total_ca - gross_profit
+    profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
+
+    # ── ReportLab ─────────────────────────────────────────────────────────────
+    brand  = colors.HexColor("#0EA5E9")
+    green  = colors.HexColor("#16A34A")
+    red    = colors.HexColor("#DC2626")
+    gray   = colors.HexColor("#6B7280")
+    light  = colors.HexColor("#F0F9FF")
+    white  = colors.white
+
+    def _p(text, **kw):
+        return Paragraph(text, ParagraphStyle("_", **kw))
+
+    def _fmt(n):
+        return f"{int(n):,}".replace(",", "\u202f")
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+        leftMargin=2 * cm, rightMargin=2 * cm,
+    )
+
+    story = []
+
+    # ── En-tête ───────────────────────────────────────────────────────────────
+    logo_path = os.path.join(settings.BASE_DIR, "static", "img", "logo.png")
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=1.4 * cm, height=1.4 * cm)
+        name_cell = _p(
+            '<font size="16" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="8" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+        left_col = Table([[logo_cell, name_cell]], colWidths=[1.6 * cm, 8 * cm])
+        left_col.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (1, 0), (1, 0), 6),
+        ]))
+    else:
+        left_col = _p(
+            '<font size="16" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="8" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+
+    from datetime import date as _date
+    today_str = _date.today().strftime("%d/%m/%Y")
+    header_table = Table(
+        [[left_col, _p(
+            f'<font size="9" color="#6B7280">Rapport généré le {today_str}<br/>'
+            f'Période : {periode_label}</font>',
+            alignment=TA_RIGHT,
+        )]],
+        colWidths=[10 * cm, 7 * cm],
+    )
+    header_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    story.append(header_table)
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(HRFlowable(width="100%", thickness=2, color=brand))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Titre rapport
+    story.append(_p(
+        f'<font size="14"><b>Rapport Comptable</b></font>   '
+        f'<font size="10" color="#6B7280">{periode_label}</font>',
+    ))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── KPI bandeaux ─────────────────────────────────────────────────────────
+    net_color = "#16A34A" if net_profit >= 0 else "#DC2626"
+    net_sign  = "+" if net_profit >= 0 else ""
+    kpi_data = [[
+        _p(f'<font size="8" color="#FFFFFF">Chiffre d\'affaires</font><br/>'
+           f'<font size="16" color="#FFFFFF"><b>{_fmt(total_ca)}</b></font><br/>'
+           f'<font size="7" color="#BAE6FD">FCFA · {len(sale_ids)} vente{"s" if len(sale_ids)>1 else ""}</font>',
+           alignment=TA_CENTER),
+        _p(f'<font size="8" color="#374151">Bénéfice brut</font><br/>'
+           f'<font size="16" color="#374151"><b>{_fmt(gross_profit)}</b></font><br/>'
+           f'<font size="7" color="#6B7280">FCFA · après coût marchand.</font>',
+           alignment=TA_CENTER),
+        _p(f'<font size="8" color="{net_color}">Résultat net</font><br/>'
+           f'<font size="16" color="{net_color}"><b>{net_sign}{_fmt(net_profit)}</b></font><br/>'
+           f'<font size="7" color="{net_color}">{float(profit_margin):.1f}% marge nette</font>',
+           alignment=TA_CENTER),
+    ]]
+    kpi_t = Table(kpi_data, colWidths=[5.5 * cm, 5.5 * cm, 5.5 * cm])
+    kpi_t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), brand),
+        ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#F8FAFC")),
+        ("BACKGROUND", (2, 0), (2, 0), colors.HexColor("#F0FDF4") if net_profit >= 0 else colors.HexColor("#FEF2F2")),
+        ("ROUNDEDCORNERS", [4]),
+        ("TOPPADDING",    (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("BOX", (0, 0), (0, 0), 0, colors.transparent),
+        ("BOX", (1, 0), (1, 0), 0.5, colors.HexColor("#E2E8F0")),
+        ("BOX", (2, 0), (2, 0), 0.5, colors.HexColor("#E2E8F0")),
+        ("LEFTPADDING", (1, 0), (1, 0), 10),
+        ("LEFTPADDING", (2, 0), (2, 0), 10),
+    ]))
+    story.append(kpi_t)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Compte de résultat ────────────────────────────────────────────────────
+    story.append(_p("<b>Compte de résultat</b>", fontSize=10))
+    story.append(Spacer(1, 0.2 * cm))
+
+    pl_rows = [
+        ["Chiffre d'affaires",         f"{_fmt(total_ca)} FCFA",      ""],
+        ["Coût des marchandises",       f"− {_fmt(cogs)} FCFA",       ""],
+        ["Bénéfice brut",               f"{_fmt(gross_profit)} FCFA",  ""],
+        ["Dépenses opérationnelles",    f"− {_fmt(total_expenses)} FCFA", ""],
+        ["RÉSULTAT NET",                f"{net_sign}{_fmt(net_profit)} FCFA", f"{float(profit_margin):.1f}%"],
+    ]
+
+    def _pl_cell(text, bold=False, color="#374151", align=TA_LEFT):
+        return _p(f'<font color="{color}">{"<b>" if bold else ""}{text}{"</b>" if bold else ""}</font>',
+                  fontSize=9, alignment=align)
+
+    pl_table_data = [
+        [_pl_cell(r[0], bold=(i in (2, 4))), _pl_cell(r[1], bold=(i in (2, 4)),
+          color=("#DC2626" if "−" in r[1] else ("#16A34A" if i == 4 and net_profit >= 0 else "#DC2626" if i == 4 else "#374151")),
+          align=TA_RIGHT),
+         _pl_cell(r[2], color="#6B7280", align=TA_RIGHT)]
+        for i, r in enumerate(pl_rows)
+    ]
+
+    pl_t = Table(pl_table_data, colWidths=[9 * cm, 5 * cm, 2.5 * cm])
+    pl_style = [
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#E5E7EB")),
+        ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#F8FAFC")),
+        ("BACKGROUND", (0, 4), (-1, 4),
+         colors.HexColor("#F0FDF4") if net_profit >= 0 else colors.HexColor("#FEF2F2")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+    ]
+    pl_t.setStyle(TableStyle(pl_style))
+    story.append(pl_t)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Répartition des revenus ───────────────────────────────────────────────
+    if total_ca > 0:
+        story.append(_p("<b>Répartition des revenus</b>", fontSize=10))
+        story.append(Spacer(1, 0.2 * cm))
+
+        rev_rows = []
+        _cat_hex = {"fish": "#0EA5E9", "accessory": "#8B5CF6", "aquarium": "#F59E0B"}
+        cat_items = [
+            (c["name"], c["revenue"], _cat_hex.get(c["slug"], "#6B7280"))
+            for c in cat_breakdown_pdf
+        ] + [("Prestations", rev_services, "#10B981")]
+        for label, amount, color in cat_items:
+            if amount > 0:
+                pct = float(amount / total_ca * 100)
+                rev_rows.append([
+                    _p(f'<font color="{color}">■</font>  <font size="9">{label}</font>', fontSize=9),
+                    _p(f'<font size="9">{_fmt(amount)} FCFA</font>', fontSize=9, alignment=TA_RIGHT),
+                    _p(f'<font size="9" color="#6B7280">{pct:.0f}%</font>', fontSize=9, alignment=TA_RIGHT),
+                ])
+
+        if rev_rows:
+            rev_t = Table(rev_rows, colWidths=[8 * cm, 5.5 * cm, 3 * cm])
+            rev_t.setStyle(TableStyle([
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#F1F5F9")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ]))
+            story.append(rev_t)
+        story.append(Spacer(1, 0.5 * cm))
+
+    # ── Dépenses par catégorie ────────────────────────────────────────────────
+    if expenses_by_category:
+        story.append(_p("<b>Dépenses par catégorie</b>", fontSize=10))
+        story.append(Spacer(1, 0.2 * cm))
+
+        exp_rows = [[
+            _p("<b>Catégorie</b>", fontSize=9),
+            _p("<b>Montant</b>", fontSize=9, alignment=TA_RIGHT),
+            _p("<b>%</b>", fontSize=9, alignment=TA_RIGHT),
+        ]]
+        for row in expenses_by_category:
+            pct = float(row["subtotal"] / total_expenses * 100) if total_expenses > 0 else 0
+            exp_rows.append([
+                _p(row["cat_label"], fontSize=9),
+                _p(f'{_fmt(row["subtotal"])} FCFA', fontSize=9, alignment=TA_RIGHT),
+                _p(f'{pct:.0f}%', fontSize=9, alignment=TA_RIGHT),
+            ])
+        exp_rows.append([
+            _p("<b>Total</b>", fontSize=9),
+            _p(f'<b>{_fmt(total_expenses)} FCFA</b>', fontSize=9, alignment=TA_RIGHT),
+            _p("", fontSize=9),
+        ])
+
+        exp_t = Table(exp_rows, colWidths=[8 * cm, 5.5 * cm, 3 * cm])
+        exp_t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F8FAFC")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#E5E7EB")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#FAFAFA")]),
+        ]))
+        story.append(exp_t)
+        story.append(Spacer(1, 0.5 * cm))
+
+    # ── Pied de page ─────────────────────────────────────────────────────────
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#E5E7EB")))
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(_p(
+        f'AquaTogo — Rapport généré le {today_str}',
+        fontSize=7, textColor=gray, alignment=TA_CENTER,
+    ))
+
+    doc.build(story)
+    buffer.seek(0)
+
+    filename = f"rapport_comptable_{periode}_{_date.today().strftime('%Y%m%d')}.pdf"
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response

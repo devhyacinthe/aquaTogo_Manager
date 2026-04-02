@@ -35,10 +35,12 @@
     <!-- Catégorie + description -->
     <div class="flex items-start justify-between gap-3">
       <div>
-        {% if product.category == 'fish' %}
-        <span class="badge-blue">Poisson</span>
+        {% if product.category.slug == 'fish' %}
+        <span class="badge-blue">{{ product.category.name }}</span>
+        {% elif product.category.slug == 'aquarium' %}
+        <span class="badge-yellow">{{ product.category.name }}</span>
         {% else %}
-        <span class="badge-gray">Accessoire</span>
+        <span class="badge-gray">{{ product.category.name }}</span>
         {% endif %}
         {% if product.description %}
         <p class="mt-2 text-sm text-gray-600 leading-relaxed">{{ product.description }}</p>

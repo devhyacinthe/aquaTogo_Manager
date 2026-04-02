@@ -2,18 +2,19 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.db.models import F
+from django.db.models import F, Count
 
-from .models import Product
-from .forms import ProductForm
+from .models import Product, ProductCategory
+from .forms import ProductForm, ProductCategoryForm
 
 
 @login_required
 def product_list(request):
     q = request.GET.get("q", "").strip()
     filtre = request.GET.get("filtre", "all")
+    cat_filter = request.GET.get("cat", "")
 
-    qs = Product.objects.filter(is_active=True)
+    qs = Product.objects.filter(is_active=True).select_related("category")
 
     if q:
         qs = qs.filter(name__icontains=q)
@@ -25,7 +26,10 @@ def product_list(request):
     elif filtre == "out":
         qs = qs.filter(stock_quantity=0)
 
-    qs = qs.order_by("category", "name")
+    if cat_filter:
+        qs = qs.filter(category__slug=cat_filter)
+
+    qs = qs.order_by("category__name", "name")
 
     all_active = Product.objects.filter(is_active=True)
     low_stock_count = all_active.filter(
@@ -40,6 +44,8 @@ def product_list(request):
             "products": qs,
             "q": q,
             "filtre": filtre,
+            "cat_filter": cat_filter,
+            "categories": ProductCategory.objects.all(),
             "total_count": all_active.count(),
             "low_stock_count": low_stock_count,
             "out_of_stock_count": out_of_stock_count,
@@ -67,7 +73,7 @@ def product_create(request):
 
 @login_required
 def product_detail(request, pk):
-    product = get_object_or_404(Product, pk=pk)
+    product = get_object_or_404(Product.objects.select_related("category"), pk=pk)
 
     from sales.models import SaleItem
 
@@ -93,7 +99,7 @@ def product_edit(request, pk):
     if not request.user.is_staff:
         raise PermissionDenied
 
-    product = get_object_or_404(Product, pk=pk)
+    product = get_object_or_404(Product.objects.select_related("category"), pk=pk)
 
     if request.method == "POST":
         clear_image = request.POST.get("clear_image") == "1"
@@ -176,3 +182,60 @@ def product_adjust_stock(request, pk):
         messages.error(request, str(e))
 
     return redirect("products:detail", pk=pk)
+
+
+# ── Category CRUD ─────────────────────────────────────────────────────────────
+
+@login_required
+def category_list(request):
+    if not request.user.is_staff:
+        raise PermissionDenied
+    cats = ProductCategory.objects.annotate(product_count=Count("products")).order_by("name")
+    return render(request, "products/category_list.html", {"categories": cats})
+
+
+@login_required
+def category_create(request):
+    if not request.user.is_staff:
+        raise PermissionDenied
+    if request.method == "POST":
+        form = ProductCategoryForm(request.POST)
+        if form.is_valid():
+            cat = form.save()
+            messages.success(request, f"Catégorie « {cat.name} » créée.")
+            return redirect("products:category_list")
+    else:
+        form = ProductCategoryForm()
+    return render(request, "products/category_form.html", {"form": form, "title": "Nouvelle catégorie", "is_edit": False})
+
+
+@login_required
+def category_edit(request, pk):
+    if not request.user.is_staff:
+        raise PermissionDenied
+    cat = get_object_or_404(ProductCategory, pk=pk)
+    if request.method == "POST":
+        form = ProductCategoryForm(request.POST, instance=cat)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Catégorie « {cat.name} » mise à jour.")
+            return redirect("products:category_list")
+    else:
+        form = ProductCategoryForm(instance=cat)
+    return render(request, "products/category_form.html", {"form": form, "title": f"Modifier « {cat.name} »", "is_edit": True, "cat": cat})
+
+
+@login_required
+def category_delete(request, pk):
+    if not request.user.is_staff:
+        raise PermissionDenied
+    if request.method != "POST":
+        return redirect("products:category_list")
+    cat = get_object_or_404(ProductCategory, pk=pk)
+    if cat.products.exists():
+        messages.error(request, f"Impossible de supprimer « {cat.name} » : des produits l'utilisent.")
+        return redirect("products:category_list")
+    name = cat.name
+    cat.delete()
+    messages.success(request, f"Catégorie « {name} » supprimée.")
+    return redirect("products:category_list")

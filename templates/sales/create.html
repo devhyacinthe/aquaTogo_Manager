@@ -56,18 +56,19 @@
 
       {# Champ de recherche client #}
       <template x-if="!selectedClient">
-        <div class="relative">
+        <div class="relative" @click.outside="clientResults = []">
           <input type="text"
                  x-model="clientQuery"
                  @input="onClientInput()"
+                 @focus="onClientFocus()"
                  @keydown.escape="clientResults = []"
-                 placeholder="Rechercher un client..."
+                 placeholder="Choisir ou rechercher un client…"
                  class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
 
-          {# Résultats autocomplete #}
+          {# Résultats / dropdown clients #}
           <div x-show="clientResults.length > 0"
                x-transition
-               class="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+               class="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden max-h-52 overflow-y-auto">
             <template x-for="c in clientResults" :key="c.id">
               <button type="button"
                       @click="selectClient(c)"
@@ -691,17 +692,25 @@ function saleCreate() {
       return this.services.filter(s => s.name.toLowerCase().includes(q));
     },
 
+    async _fetchClients(q) {
+      try {
+        const r = await fetch('/ventes/api/clients/?q=' + encodeURIComponent(q));
+        this.clientResults = await r.json();
+      } catch(e) {}
+    },
+
+    onClientFocus() {
+      if (!this.selectedClient && this.clientResults.length === 0) {
+        this._fetchClients('');
+      }
+    },
+
     onClientInput() {
       clearTimeout(this.clientTimeout);
       this.selectedClient = null;
       const q = this.clientQuery.trim();
-      if (!q) { this.clientResults = []; return; }
-      this.clientTimeout = setTimeout(async () => {
-        try {
-          const r = await fetch('/ventes/api/clients/?q=' + encodeURIComponent(q));
-          this.clientResults = await r.json();
-        } catch(e) {}
-      }, 350);
+      if (!q) { this._fetchClients(''); return; }
+      this.clientTimeout = setTimeout(() => this._fetchClients(q), 350);
     },
 
     selectClient(c) {

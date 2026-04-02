@@ -11,15 +11,18 @@
     <h1 class="text-xl font-bold text-gray-900">Produits</h1>
     <p class="text-sm text-gray-500 mt-0.5">Catalogue & gestion du stock</p>
   </div>
-  {% if is_staff %}
-  <a href="{% url 'products:create' %}" class="btn-primary flex items-center gap-1.5">
-    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-    </svg>
-    <span class="hidden sm:inline">Nouveau produit</span>
-    <span class="sm:hidden">Nouveau</span>
-  </a>
-  {% endif %}
+  <div class="flex items-center gap-2">
+    {% if is_staff %}
+    <a href="{% url 'products:category_list' %}" class="btn-secondary text-sm">Catégories</a>
+    <a href="{% url 'products:create' %}" class="btn-primary flex items-center gap-1.5">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+      <span class="hidden sm:inline">Nouveau produit</span>
+      <span class="sm:hidden">Nouveau</span>
+    </a>
+    {% endif %}
+  </div>
 </div>
 
 <!-- Stats rapides -->
@@ -54,6 +57,9 @@
     {% if filtre != "all" %}
     <input type="hidden" name="filtre" value="{{ filtre }}">
     {% endif %}
+    {% if cat_filter %}
+    <input type="hidden" name="cat" value="{{ cat_filter }}">
+    {% endif %}
     <div style="position:relative;">
       <svg style="pointer-events:none;position:absolute;left:12px;top:50%;transform:translateY(-50%);height:16px;width:16px;color:#9ca3af;"
            fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -66,37 +72,59 @@
     </div>
   </form>
 
-  <!-- Filtres pills -->
+  <!-- Filtres pills stock -->
   <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
     {% with base_url="?filtre=" %}
-    <a href="{{ base_url }}all{% if q %}&q={{ q }}{% endif %}"
+    <a href="{{ base_url }}all{% if cat_filter %}&cat={{ cat_filter }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
        style="flex-shrink:0;border-radius:9999px;padding:6px 14px;font-size:0.75rem;font-weight:500;text-decoration:none;white-space:nowrap;
               {% if filtre == 'all' %}background:#0284c7;color:white;{% else %}background:white;border:1px solid #d1d5db;color:#4b5563;{% endif %}">
       Tous
     </a>
-    <a href="{{ base_url }}available{% if q %}&q={{ q }}{% endif %}"
+    <a href="{{ base_url }}available{% if cat_filter %}&cat={{ cat_filter }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
        style="flex-shrink:0;border-radius:9999px;padding:6px 14px;font-size:0.75rem;font-weight:500;text-decoration:none;white-space:nowrap;
               {% if filtre == 'available' %}background:#0284c7;color:white;{% else %}background:white;border:1px solid #d1d5db;color:#4b5563;{% endif %}">
       Disponibles
     </a>
-    <a href="{{ base_url }}low{% if q %}&q={{ q }}{% endif %}"
+    <a href="{{ base_url }}low{% if cat_filter %}&cat={{ cat_filter }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
        style="flex-shrink:0;border-radius:9999px;padding:6px 14px;font-size:0.75rem;font-weight:500;text-decoration:none;white-space:nowrap;
               {% if filtre == 'low' %}background:#f59e0b;color:white;{% else %}background:white;border:1px solid #d1d5db;color:#4b5563;{% endif %}">
       Stock faible
     </a>
-    <a href="{{ base_url }}out{% if q %}&q={{ q }}{% endif %}"
+    <a href="{{ base_url }}out{% if cat_filter %}&cat={{ cat_filter }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
        style="flex-shrink:0;border-radius:9999px;padding:6px 14px;font-size:0.75rem;font-weight:500;text-decoration:none;white-space:nowrap;
               {% if filtre == 'out' %}background:#ef4444;color:white;{% else %}background:white;border:1px solid #d1d5db;color:#4b5563;{% endif %}">
       Épuisés
     </a>
     {% endwith %}
   </div>
+
+  <!-- Filtres catégorie -->
+  <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-top:2px;">
+    <a href="?filtre={{ filtre }}{% if q %}&q={{ q }}{% endif %}"
+       style="flex-shrink:0;border-radius:9999px;padding:6px 14px;font-size:0.75rem;font-weight:500;text-decoration:none;white-space:nowrap;
+              {% if not cat_filter %}background:#0284c7;color:white;{% else %}background:white;border:1px solid #d1d5db;color:#4b5563;{% endif %}">
+      Toutes catégories
+    </a>
+    {% for cat in categories %}
+    <a href="?filtre={{ filtre }}&cat={{ cat.slug }}{% if q %}&q={{ q }}{% endif %}"
+       style="flex-shrink:0;border-radius:9999px;padding:6px 14px;font-size:0.75rem;font-weight:500;text-decoration:none;white-space:nowrap;
+              {% if cat_filter == cat.slug %}background:#0284c7;color:white;{% else %}background:white;border:1px solid #d1d5db;color:#4b5563;{% endif %}">
+      {{ cat.name }}
+    </a>
+    {% endfor %}
+  </div>
 </div>
 
 <!-- Liste produits -->
 {% if products %}
+{% regroup products by category as category_groups %}
+{% for group in category_groups %}
 <div class="space-y-2">
-  {% for product in products %}
+  <div class="flex items-center gap-2 px-1">
+    <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400">{{ group.grouper.name }}</h3>
+    <span class="text-xs text-gray-300">({{ group.list|length }})</span>
+  </div>
+  {% for product in group.list %}
   <a href="{% url 'products:detail' product.pk %}"
      class="flex items-center gap-3 rounded-xl border px-3 py-3 transition-colors hover:shadow-sm
             {% if product.is_out_of_stock %}bg-red-50/50 border-red-100
@@ -109,7 +137,7 @@
          class="h-12 w-12 shrink-0 rounded-xl object-cover">
     {% else %}
     <div class="h-12 w-12 shrink-0 rounded-xl flex items-center justify-center text-base font-bold
-                {% if product.category == 'fish' %}bg-brand-100 text-brand-700{% else %}bg-gray-100 text-gray-600{% endif %}">
+                {% if product.category.slug == 'fish' %}bg-cyan-100 text-cyan-700{% elif product.category.slug == 'aquarium' %}bg-amber-100 text-amber-700{% else %}bg-gray-100 text-gray-600{% endif %}">
       {{ product.name|first|upper }}
     </div>
     {% endif %}
@@ -118,10 +146,14 @@
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2 flex-wrap">
         <span class="font-semibold text-gray-900 text-sm leading-tight truncate">{{ product.name }}</span>
-        {% if product.category == 'fish' %}
-        <span class="badge-blue shrink-0">Poisson</span>
+        {% if product.category.slug == 'fish' %}
+        <span class="badge-blue shrink-0">{{ product.category.name }}</span>
+        {% elif product.category.slug == 'aquarium' %}
+        <span class="badge-yellow shrink-0">{{ product.category.name }}</span>
+        {% elif product.category.slug == 'accessory' %}
+        <span class="badge-gray shrink-0">{{ product.category.name }}</span>
         {% else %}
-        <span class="badge-gray shrink-0">Accessoire</span>
+        <span class="badge-gray shrink-0">{{ product.category.name }}</span>
         {% endif %}
       </div>
       <div class="mt-1">
@@ -145,6 +177,7 @@
   </a>
   {% endfor %}
 </div>
+{% endfor %}
 
 {% else %}
 <!-- État vide -->

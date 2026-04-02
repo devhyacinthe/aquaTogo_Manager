@@ -64,7 +64,7 @@ def get_low_stock_products() -> list[dict]:
     return [
         {
             "name": p.name,
-            "category": p.get_category_display(),
+            "category": p.category.name,
             "stock": p.stock_quantity,
             "threshold": p.low_stock_threshold,
         }

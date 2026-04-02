@@ -5,7 +5,8 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Case, DecimalField, ExpressionWrapper, F, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
@@ -70,6 +71,45 @@ def sale_list(request):
     rev_services = svc_agg["ca"] or Decimal("0.00")
     profit_services = svc_agg["profit"] or Decimal("0.00")
 
+    # Répartition par catégorie de produit (dynamique)
+    from products.models import ProductCategory
+    cat_breakdown = []
+    for cat in ProductCategory.objects.order_by("name"):
+        agg = items_qs.filter(product__category=cat).aggregate(
+            ca=Sum("line_total"), profit=Sum("line_profit")
+        )
+        cat_breakdown.append({
+            "slug": cat.slug,
+            "name": cat.name,
+            "ca": agg["ca"] or Decimal("0.00"),
+            "profit": agg["profit"] or Decimal("0.00"),
+        })
+
+    # CA & bénéfice réellement encaissés (basé sur les paiements de la période)
+    _zero = Value(Decimal("0.00"))
+    _df = DecimalField(max_digits=14, decimal_places=2)
+    payments_qs = Payment.objects.filter(
+        payment_date__gte=start, payment_date__lte=end
+    ).annotate(
+        prop_profit=Case(
+            When(
+                sale__total_amount__gt=0,
+                then=ExpressionWrapper(
+                    F("amount") * F("sale__total_profit") / F("sale__total_amount"),
+                    output_field=_df,
+                ),
+            ),
+            default=_zero,
+            output_field=_df,
+        )
+    )
+    paid_agg = payments_qs.aggregate(
+        ca=Coalesce(Sum("amount"), _zero, output_field=_df),
+        profit=Coalesce(Sum("prop_profit"), _zero, output_field=_df),
+    )
+    paid_ca = paid_agg["ca"]
+    paid_profit = paid_agg["profit"]
+
     return render(request, "sales/list.html", {
         "sales": sales,
         "period": periode,
@@ -80,6 +120,9 @@ def sale_list(request):
         "profit_products": profit_products,
         "rev_services": rev_services,
         "profit_services": profit_services,
+        "cat_breakdown": cat_breakdown,
+        "paid_ca": paid_ca,
+        "paid_profit": paid_profit,
     })
 
 
@@ -87,15 +130,15 @@ def sale_list(request):
 
 @login_required
 def sale_create(request):
-    products = Product.objects.filter(is_active=True).order_by("name")
+    products = Product.objects.filter(is_active=True).select_related("category").order_by("name")
     services = Service.objects.filter(is_active=True).order_by("name")
 
     products_data = [
         {
             "id": p.id,
             "name": p.name,
-            "category": p.get_category_display(),
-            "category_key": p.category,
+            "category": p.category.name,
+            "category_key": p.category.slug,
             "selling_price": str(p.selling_price),
             "purchase_price": str(p.purchase_price),
             "stock_quantity": p.stock_quantity,
@@ -302,12 +345,12 @@ def api_clients(request):
 @login_required
 @require_GET
 def api_products(_request):
-    products = Product.objects.filter(is_active=True).order_by("name")
+    products = Product.objects.filter(is_active=True).select_related("category").order_by("name")
     data = [
         {
             "id": p.id,
             "name": p.name,
-            "category": p.get_category_display(),
+            "category": p.category.name,
             "selling_price": str(p.selling_price),
             "purchase_price": str(p.purchase_price),
             "stock_quantity": p.stock_quantity,

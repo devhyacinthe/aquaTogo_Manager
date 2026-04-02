@@ -8,4 +8,5 @@ urlpatterns = [
     path("login/", views.AquaLoginView.as_view(), name="login"),
     path("logout/", views.AquaLogoutView.as_view(), name="logout"),
     path("profil/", views.profile, name="profile"),
+    path("dashboard/chart-data/", views.dashboard_chart_data, name="dashboard_chart_data"),
 ]

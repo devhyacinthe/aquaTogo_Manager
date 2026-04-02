@@ -109,20 +109,32 @@
     </div>
   </div>
 
-  {# ── Graphe évolution 30 jours ───────────────────────────────────────────── #}
-  <div class="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-    <div class="flex items-center justify-between mb-4">
+  {# ── Graphe évolution ───────────────────────────────────────────────────── #}
+  <div class="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm"
+       x-data="evolutionChart()">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
       <div>
-        <h2 class="text-sm font-semibold text-gray-800">Évolution des 30 derniers jours</h2>
-        <p class="text-xs text-gray-400 mt-0.5">Chiffre d'affaires &amp; bénéfice quotidiens</p>
+        <h2 class="text-sm font-semibold text-gray-800" x-text="periodLabel"></h2>
+        <p class="text-xs text-gray-400 mt-0.5">CA · Bénéfice · Dépenses</p>
       </div>
-      <div class="flex items-center gap-4 text-xs text-gray-500">
-        <span class="flex items-center gap-1.5">
-          <span class="inline-block h-2.5 w-2.5 rounded-full bg-pink-500"></span> CA
-        </span>
-        <span class="flex items-center gap-1.5">
-          <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"></span> Bénéfice
-        </span>
+      <div class="flex items-center gap-3 flex-wrap">
+        {# Légende #}
+        <div class="flex items-center gap-3 text-xs text-gray-500">
+          <span class="flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-full bg-pink-500"></span> CA</span>
+          <span class="flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-full bg-emerald-500"></span> Bénéfice</span>
+          <span class="flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-full bg-red-500"></span> Dépenses</span>
+        </div>
+        {# Période pills #}
+        <div class="flex gap-1">
+          <template x-for="p in periods" :key="p.key">
+            <button @click="changePeriod(p.key)"
+                    :class="activePeriod === p.key
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                    class="px-2.5 py-1 rounded-full text-xs font-medium transition-colors"
+                    x-text="p.label"></button>
+          </template>
+        </div>
       </div>
     </div>
     <div class="relative h-52">
@@ -152,7 +164,7 @@
           {% endif %}
           <div class="min-w-0">
             <p class="text-sm font-medium text-gray-900 truncate">{{ product.name }}</p>
-            <p class="text-xs text-gray-400">{{ product.get_category_display }}</p>
+            <p class="text-xs text-gray-400">{{ product.category.name }}</p>
           </div>
         </div>
         <div class="text-right shrink-0">
@@ -285,84 +297,133 @@
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-(function () {
-  const labels   = {{ chart_labels|safe }};
-  const caData   = {{ chart_ca|safe }};
-  const profData = {{ chart_profit|safe }};
+function evolutionChart() {
+  return {
+    periods: [
+      { key: 'week',   label: '7j'   },
+      { key: 'month',  label: '30j'  },
+      { key: 'year',   label: '1 an' },
+      { key: '5years', label: '5 ans'},
+    ],
+    activePeriod: 'month',
+    periodLabel: 'Évolution sur 30 jours',
+    chart: null,
 
-  const ctx = document.getElementById('evolutionChart');
-  if (!ctx) return;
+    _periodLabel(key) {
+      return { week: 'Évolution sur 7 jours', month: 'Évolution sur 30 jours',
+               year: 'Évolution sur 12 mois', '5years': 'Évolution sur 5 ans' }[key] || '';
+    },
 
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'CA',
-          data: caData,
-          borderColor: '#ec4899',
-          backgroundColor: 'rgba(236,72,153,0.08)',
-          borderWidth: 2,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          pointHoverBackgroundColor: '#ec4899',
-          fill: true,
-          tension: 0.4,
+    _chartConfig(labels, caData, profData, expData) {
+      return {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'CA',
+              data: caData,
+              borderColor: '#ec4899',
+              backgroundColor: 'rgba(236,72,153,0.08)',
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#ec4899',
+              fill: true,
+              tension: 0.4,
+            },
+            {
+              label: 'Bénéfice',
+              data: profData,
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16,185,129,0.06)',
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#10b981',
+              fill: true,
+              tension: 0.4,
+            },
+            {
+              label: 'Dépenses',
+              data: expData,
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239,68,68,0.06)',
+              borderWidth: 2,
+              borderDash: [4, 3],
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#ef4444',
+              fill: true,
+              tension: 0.4,
+            },
+          ],
         },
-        {
-          label: 'Bénéfice',
-          data: profData,
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16,185,129,0.06)',
-          borderWidth: 2,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          pointHoverBackgroundColor: '#10b981',
-          fill: true,
-          tension: 0.4,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1e293b',
+              titleColor: '#94a3b8',
+              bodyColor: '#f1f5f9',
+              padding: 10,
+              callbacks: {
+                label: c => ' ' + Math.round(c.parsed.y).toLocaleString('fr-FR') + ' FCFA',
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
+              border: { display: false },
+            },
+            y: {
+              grid: { color: '#f1f5f9' },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 11 },
+                callback: v => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v,
+              },
+              border: { display: false },
+            },
+          },
         },
-      ],
+      };
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#1e293b',
-          titleColor: '#94a3b8',
-          bodyColor: '#f1f5f9',
-          padding: 10,
-          callbacks: {
-            label: ctx => ' ' + Math.round(ctx.parsed.y).toLocaleString('fr-FR') + ' FCFA',
-          },
-        },
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: {
-            color: '#94a3b8',
-            font: { size: 11 },
-            maxTicksLimit: 8,
-            maxRotation: 0,
-          },
-          border: { display: false },
-        },
-        y: {
-          grid: { color: '#f1f5f9' },
-          ticks: {
-            color: '#94a3b8',
-            font: { size: 11 },
-            callback: v => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v,
-          },
-          border: { display: false },
-        },
-      },
+
+    init() {
+      const labels  = {{ chart_labels|safe }};
+      const caData  = {{ chart_ca|safe }};
+      const profData = {{ chart_profit|safe }};
+      const expData = {{ chart_expenses|safe }};
+
+      const ctx = document.getElementById('evolutionChart');
+      if (!ctx) return;
+      this.chart = new Chart(ctx, this._chartConfig(labels, caData, profData, expData));
     },
-  });
-})();
+
+    async changePeriod(key) {
+      if (key === this.activePeriod) return;
+      this.activePeriod = key;
+      this.periodLabel = this._periodLabel(key);
+
+      try {
+        const res = await fetch('/dashboard/chart-data/?period=' + key);
+        const d = await res.json();
+        this.chart.data.labels = d.labels;
+        this.chart.data.datasets[0].data = d.ca;
+        this.chart.data.datasets[1].data = d.profit;
+        this.chart.data.datasets[2].data = d.expenses;
+        this.chart.update();
+      } catch(e) {
+        console.error('Chart fetch error', e);
+      }
+    },
+  };
+}
 </script>
 {% endblock %}
