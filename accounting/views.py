@@ -285,7 +285,16 @@ def accounting_report(request):
     if start:
         expense_qs = expense_qs.filter(expense_date__gte=start, expense_date__lte=end)
 
-    total_expenses = expense_qs.aggregate(
+    # Dépenses opérationnelles = tout SAUF 'stock' (le coût des marchandises
+    # vendues est déjà capturé dans le COGS via purchase_price_snapshot).
+    operational_qs = expense_qs.exclude(category=Expense.Category.STOCK)
+
+    total_expenses = operational_qs.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    # Total toutes catégories (pour l'affichage de la répartition)
+    total_all_expenses = expense_qs.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
 
@@ -298,21 +307,21 @@ def accounting_report(request):
     category_labels = dict(Expense.Category.choices)
     for row in expenses_by_category:
         row["cat_label"] = category_labels.get(row["category"], row["category"])
-        row["pct"] = (row["subtotal"] / total_expenses * 100) if total_expenses > 0 else Decimal("0")
+        row["pct"] = (row["subtotal"] / total_all_expenses * 100) if total_all_expenses > 0 else Decimal("0")
 
     net_profit = gross_profit - total_expenses
     cogs = total_ca - gross_profit
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
-    # Capital actuel = cumul tous les temps (encaissements proportionnels - dépenses)
-    from sales.models import Sale
-    all_time_profit = Sale.objects.aggregate(
-        total=Coalesce(Sum("total_profit"), _zero, output_field=_df)
-    )["total"]
-    all_time_expenses = Expense.objects.aggregate(
+    # Capital en caisse = tout ce qui a été encaissé - tout ce qui a été dépensé (tous temps)
+    from sales.models import Payment as _Payment
+    all_time_cash_in = _Payment.objects.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
-    capital_actuel = all_time_profit - all_time_expenses
+    all_time_cash_out = Expense.objects.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+    capital_actuel = all_time_cash_in - all_time_cash_out
 
     context = {
         "total_ca": total_ca,
@@ -409,7 +418,14 @@ def report_pdf(request):
     if start:
         expense_qs = expense_qs.filter(expense_date__gte=start, expense_date__lte=end)
 
-    total_expenses = expense_qs.aggregate(
+    # Dépenses opérationnelles : exclure 'stock' (déjà dans le COGS)
+    operational_qs_pdf = expense_qs.exclude(category=Expense.Category.STOCK)
+
+    total_expenses = operational_qs_pdf.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    total_all_expenses_pdf = expense_qs.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
 
@@ -533,7 +549,7 @@ def report_pdf(request):
 
     pl_rows = [
         ["Chiffre d'affaires",         f"{_fmt(total_ca)} FCFA",      ""],
-        ["Coût des marchandises",       f"− {_fmt(cogs)} FCFA",       ""],
+        ["Coût des articles vendus",       f"− {_fmt(cogs)} FCFA",       ""],
         ["Bénéfice brut",               f"{_fmt(gross_profit)} FCFA",  ""],
         ["Dépenses opérationnelles",    f"− {_fmt(total_expenses)} FCFA", ""],
         ["RÉSULTAT NET",                f"{net_sign}{_fmt(net_profit)} FCFA", f"{float(profit_margin):.1f}%"],

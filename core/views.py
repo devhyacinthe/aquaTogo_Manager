@@ -109,8 +109,10 @@ def dashboard(request):
     )
 
     from accounting.models import Expense
+    # Exclure les achats de stock : déjà comptés dans le COGS (purchase_price_snapshot)
     total_expenses_month = (
         Expense.objects.filter(expense_date__gte=start_of_month)
+        .exclude(category=Expense.Category.STOCK)
         .aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )

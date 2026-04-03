@@ -138,7 +138,7 @@
       </div>
     </div>
     <div class="relative h-52">
-      <canvas id="evolutionChart"></canvas>
+      <canvas id="evo-chart"></canvas>
     </div>
   </div>
 
@@ -298,6 +298,91 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 function evolutionChart() {
+  // Stocké hors du scope réactif d'Alpine pour éviter que le Proxy
+  // n'enveloppe l'instance Chart.js (ce qui casse ses méthodes internes).
+  let _chart = null;
+
+  function buildConfig(labels, caData, profData, expData) {
+    return {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'CA',
+            data: caData,
+            borderColor: '#ec4899',
+            backgroundColor: 'rgba(236,72,153,0.08)',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBackgroundColor: '#ec4899',
+            fill: true,
+            tension: 0.4,
+          },
+          {
+            label: 'Bénéfice',
+            data: profData,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.06)',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBackgroundColor: '#10b981',
+            fill: true,
+            tension: 0.4,
+          },
+          {
+            label: 'Dépenses',
+            data: expData,
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239,68,68,0.06)',
+            borderWidth: 2,
+            borderDash: [4, 3],
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBackgroundColor: '#ef4444',
+            fill: true,
+            tension: 0.4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            titleColor: '#94a3b8',
+            bodyColor: '#f1f5f9',
+            padding: 10,
+            callbacks: {
+              label: c => ' ' + Math.round(c.parsed.y).toLocaleString('fr-FR') + ' FCFA',
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#94a3b8', font: { size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
+            border: { display: false },
+          },
+          y: {
+            grid: { color: '#f1f5f9' },
+            ticks: {
+              color: '#94a3b8',
+              font: { size: 11 },
+              callback: v => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v,
+            },
+            border: { display: false },
+          },
+        },
+      },
+    };
+  }
+
   return {
     periods: [
       { key: 'week',   label: '7j'   },
@@ -307,103 +392,21 @@ function evolutionChart() {
     ],
     activePeriod: 'month',
     periodLabel: 'Évolution sur 30 jours',
-    chart: null,
 
     _periodLabel(key) {
       return { week: 'Évolution sur 7 jours', month: 'Évolution sur 30 jours',
                year: 'Évolution sur 12 mois', '5years': 'Évolution sur 5 ans' }[key] || '';
     },
 
-    _chartConfig(labels, caData, profData, expData) {
-      return {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'CA',
-              data: caData,
-              borderColor: '#ec4899',
-              backgroundColor: 'rgba(236,72,153,0.08)',
-              borderWidth: 2,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              pointHoverBackgroundColor: '#ec4899',
-              fill: true,
-              tension: 0.4,
-            },
-            {
-              label: 'Bénéfice',
-              data: profData,
-              borderColor: '#10b981',
-              backgroundColor: 'rgba(16,185,129,0.06)',
-              borderWidth: 2,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              pointHoverBackgroundColor: '#10b981',
-              fill: true,
-              tension: 0.4,
-            },
-            {
-              label: 'Dépenses',
-              data: expData,
-              borderColor: '#ef4444',
-              backgroundColor: 'rgba(239,68,68,0.06)',
-              borderWidth: 2,
-              borderDash: [4, 3],
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              pointHoverBackgroundColor: '#ef4444',
-              fill: true,
-              tension: 0.4,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              backgroundColor: '#1e293b',
-              titleColor: '#94a3b8',
-              bodyColor: '#f1f5f9',
-              padding: 10,
-              callbacks: {
-                label: c => ' ' + Math.round(c.parsed.y).toLocaleString('fr-FR') + ' FCFA',
-              },
-            },
-          },
-          scales: {
-            x: {
-              grid: { display: false },
-              ticks: { color: '#94a3b8', font: { size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
-              border: { display: false },
-            },
-            y: {
-              grid: { color: '#f1f5f9' },
-              ticks: {
-                color: '#94a3b8',
-                font: { size: 11 },
-                callback: v => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v,
-              },
-              border: { display: false },
-            },
-          },
-        },
-      };
-    },
-
     init() {
-      const labels  = {{ chart_labels|safe }};
-      const caData  = {{ chart_ca|safe }};
+      const labels   = {{ chart_labels|safe }};
+      const caData   = {{ chart_ca|safe }};
       const profData = {{ chart_profit|safe }};
-      const expData = {{ chart_expenses|safe }};
+      const expData  = {{ chart_expenses|safe }};
 
-      const ctx = document.getElementById('evolutionChart');
-      if (!ctx) return;
-      this.chart = new Chart(ctx, this._chartConfig(labels, caData, profData, expData));
+      const canvas = document.getElementById('evo-chart');
+      if (!canvas) return;
+      _chart = new Chart(canvas, buildConfig(labels, caData, profData, expData));
     },
 
     async changePeriod(key) {
@@ -414,11 +417,11 @@ function evolutionChart() {
       try {
         const res = await fetch('/dashboard/chart-data/?period=' + key);
         const d = await res.json();
-        this.chart.data.labels = d.labels;
-        this.chart.data.datasets[0].data = d.ca;
-        this.chart.data.datasets[1].data = d.profit;
-        this.chart.data.datasets[2].data = d.expenses;
-        this.chart.update();
+        _chart.data.labels = d.labels;
+        _chart.data.datasets[0].data = d.ca;
+        _chart.data.datasets[1].data = d.profit;
+        _chart.data.datasets[2].data = d.expenses;
+        _chart.update();
       } catch(e) {
         console.error('Chart fetch error', e);
       }

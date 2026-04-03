@@ -154,7 +154,7 @@
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1.5">Méthode</label>
           <input type="hidden" name="payment_method" x-model="method" />
-          <div class="flex gap-2 flex-wrap">
+          <div class="flex gap-2 flex-wrap mb-2">
             <button type="button"
                     @click="method = 'cash'"
                     :class="method === 'cash' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"

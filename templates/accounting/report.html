@@ -81,7 +81,7 @@
         <span class="text-sm font-semibold text-gray-900">{{ total_ca|floatformat:0 }} FCFA</span>
       </div>
       <div class="flex justify-between items-center py-2.5">
-        <span class="text-sm text-gray-600">Coût des marchandises</span>
+        <span class="text-sm text-gray-600">Coût des articles vendus</span>
         <span class="text-sm font-medium text-red-600">− {{ cogs|floatformat:0 }} FCFA</span>
       </div>
       <div class="flex justify-between items-center py-2.5 bg-gray-50 -mx-4 px-4">
@@ -89,7 +89,7 @@
         <span class="text-sm font-bold text-gray-900">{{ gross_profit|floatformat:0 }} FCFA</span>
       </div>
       <div class="flex justify-between items-center py-2.5">
-        <span class="text-sm text-gray-600">Dépenses opérationnelles</span>
+        <span class="text-sm text-gray-600">Dépenses opérationnelles <span class="text-xs text-gray-400">(hors achat stock)</span></span>
         <span class="text-sm font-medium text-red-600">− {{ total_expenses|floatformat:0 }} FCFA</span>
       </div>
       <div class="flex justify-between items-center py-3 -mx-4 px-4 {% if is_profitable %}bg-green-50{% else %}bg-red-50{% endif %}">
@@ -204,13 +204,13 @@
     <div class="flex items-center justify-between">
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider {% if capital_positif %}text-green-600{% else %}text-red-600{% endif %}">
-          Capital actuel (cumul total)
+          Argent en caisse (cumul total)
         </p>
         <p class="text-2xl font-bold mt-1 {% if capital_positif %}text-green-700{% else %}text-red-700{% endif %}">
           {% if capital_actuel >= 0 %}+{% endif %}{{ capital_actuel|floatformat:0 }} FCFA
         </p>
         <p class="text-xs mt-1 {% if capital_positif %}text-green-500{% else %}text-red-500{% endif %}">
-          Bénéfices cumulés − dépenses cumulées (tous les temps)
+          Total encaissé − total dépensé (depuis le début)
         </p>
       </div>
       <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full {% if capital_positif %}bg-green-100{% else %}bg-red-100{% endif %}">
