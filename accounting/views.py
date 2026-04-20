@@ -285,11 +285,13 @@ def accounting_report(request):
     if start:
         expense_qs = expense_qs.filter(expense_date__gte=start, expense_date__lte=end)
 
-    # Dépenses opérationnelles = tout SAUF 'stock' (le coût des marchandises
-    # vendues est déjà capturé dans le COGS via purchase_price_snapshot).
     operational_qs = expense_qs.exclude(category=Expense.Category.STOCK)
 
     total_expenses = operational_qs.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    stock_expenses = expense_qs.filter(category=Expense.Category.STOCK).aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
 
@@ -309,7 +311,7 @@ def accounting_report(request):
         row["cat_label"] = category_labels.get(row["category"], row["category"])
         row["pct"] = (row["subtotal"] / total_all_expenses * 100) if total_all_expenses > 0 else Decimal("0")
 
-    net_profit = gross_profit - total_expenses
+    net_profit = gross_profit - stock_expenses - total_expenses
     cogs = total_ca - gross_profit
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
@@ -327,6 +329,7 @@ def accounting_report(request):
         "total_ca": total_ca,
         "gross_profit": gross_profit,
         "cogs": cogs,
+        "stock_expenses": stock_expenses,
         "total_expenses": total_expenses,
         "net_profit": net_profit,
         "profit_margin": profit_margin,
@@ -418,10 +421,13 @@ def report_pdf(request):
     if start:
         expense_qs = expense_qs.filter(expense_date__gte=start, expense_date__lte=end)
 
-    # Dépenses opérationnelles : exclure 'stock' (déjà dans le COGS)
     operational_qs_pdf = expense_qs.exclude(category=Expense.Category.STOCK)
 
     total_expenses = operational_qs_pdf.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    stock_expenses = expense_qs.filter(category=Expense.Category.STOCK).aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
 
@@ -438,7 +444,7 @@ def report_pdf(request):
     for row in expenses_by_category:
         row["cat_label"] = category_labels.get(row["category"], row["category"])
 
-    net_profit    = gross_profit - total_expenses
+    net_profit    = gross_profit - stock_expenses - total_expenses
     cogs          = total_ca - gross_profit
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
@@ -548,21 +554,25 @@ def report_pdf(request):
     story.append(Spacer(1, 0.2 * cm))
 
     pl_rows = [
-        ["Chiffre d'affaires",         f"{_fmt(total_ca)} FCFA",      ""],
-        ["Coût des articles vendus",       f"− {_fmt(cogs)} FCFA",       ""],
-        ["Bénéfice brut",               f"{_fmt(gross_profit)} FCFA",  ""],
-        ["Dépenses opérationnelles",    f"− {_fmt(total_expenses)} FCFA", ""],
-        ["RÉSULTAT NET",                f"{net_sign}{_fmt(net_profit)} FCFA", f"{float(profit_margin):.1f}%"],
+        ["Chiffre d'affaires",          f"{_fmt(total_ca)} FCFA",             "", False],
+        ["Coût des articles vendus",    f"− {_fmt(cogs)} FCFA",               "", False],
+        ["Bénéfice brut",               f"{_fmt(gross_profit)} FCFA",         "", True],
+        ["Achats de stock",             f"− {_fmt(stock_expenses)} FCFA",     "", False],
+        ["Dépenses opérationnelles",    f"− {_fmt(total_expenses)} FCFA",     "", False],
+        ["RÉSULTAT NET",                f"{net_sign}{_fmt(net_profit)} FCFA", f"{float(profit_margin):.1f}%", True],
     ]
+    net_row_idx = len(pl_rows) - 1
+    gross_row_idx = 2
 
     def _pl_cell(text, bold=False, color="#374151", align=TA_LEFT):
         return _p(f'<font color="{color}">{"<b>" if bold else ""}{text}{"</b>" if bold else ""}</font>',
                   fontSize=9, alignment=align)
 
     pl_table_data = [
-        [_pl_cell(r[0], bold=(i in (2, 4))), _pl_cell(r[1], bold=(i in (2, 4)),
-          color=("#DC2626" if "−" in r[1] else ("#16A34A" if i == 4 and net_profit >= 0 else "#DC2626" if i == 4 else "#374151")),
-          align=TA_RIGHT),
+        [_pl_cell(r[0], bold=r[3]),
+         _pl_cell(r[1], bold=r[3],
+           color=("#DC2626" if "−" in r[1] else ("#16A34A" if i == net_row_idx and net_profit >= 0 else "#DC2626" if i == net_row_idx else "#374151")),
+           align=TA_RIGHT),
          _pl_cell(r[2], color="#6B7280", align=TA_RIGHT)]
         for i, r in enumerate(pl_rows)
     ]
@@ -574,8 +584,8 @@ def report_pdf(request):
         ("LEFTPADDING",   (0, 0), (-1, -1), 8),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
         ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#E5E7EB")),
-        ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#F8FAFC")),
-        ("BACKGROUND", (0, 4), (-1, 4),
+        ("BACKGROUND", (0, gross_row_idx), (-1, gross_row_idx), colors.HexColor("#F8FAFC")),
+        ("BACKGROUND", (0, net_row_idx), (-1, net_row_idx),
          colors.HexColor("#F0FDF4") if net_profit >= 0 else colors.HexColor("#FEF2F2")),
         ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
     ]

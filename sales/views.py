@@ -332,6 +332,22 @@ def sale_add_payment(request, pk):
 # ── API views ─────────────────────────────────────────────────────────────────
 
 @login_required
+@require_POST
+def api_create_client(request):
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except (ValueError, KeyError):
+        return JsonResponse({"error": "Données invalides"}, status=400)
+    name = body.get("name", "").strip()
+    phone = body.get("phone", "").strip()
+    if not name:
+        return JsonResponse({"error": "Le nom est requis"}, status=400)
+    client = Client.objects.create(name=name, phone=phone)
+    return JsonResponse({"id": client.id, "name": client.name, "phone": client.phone})
+
+
+@login_required
 @require_GET
 def api_clients(request):
     q = request.GET.get("q", "").strip()
@@ -655,7 +671,22 @@ def sale_invoice_pdf(request, pk):
     story.append(_p("AquaTogo — Merci pour votre confiance !",
                     fontSize=8, textColor=gray, alignment=TA_CENTER))
 
-    doc.build(story)
+    if sale.payment_status == "paid":
+        def _draw_paid_stamp(canvas, doc):
+            canvas.saveState()
+            canvas.setFillColor(colors.Color(0.086, 0.639, 0.290, alpha=0.22))
+            canvas.setStrokeColor(colors.Color(0.086, 0.639, 0.290, alpha=0.35))
+            canvas.setLineWidth(3)
+            canvas.setFont("Helvetica-Bold", 72)
+            w, h = A4
+            canvas.translate(w / 2, h / 2)
+            canvas.rotate(42)
+            canvas.roundRect(-110, -28, 220, 70, 8, fill=0, stroke=1)
+            canvas.drawCentredString(0, 8, "PAYÉ")
+            canvas.restoreState()
+        doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)
+    else:
+        doc.build(story)
     buffer.seek(0)
 
     filename = f"Facture_AquaTogo_{sale.pk:04d}_{sale.sale_date.strftime('%Y%m%d')}.pdf"

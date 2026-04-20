@@ -2,5 +2,6 @@ node_modules
 .env
 docker-compose.yml
 venv
-CLAUDE.md
-.claude
+/CLAUDE.md
+/.claude
+
