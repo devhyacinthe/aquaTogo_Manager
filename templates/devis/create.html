@@ -1,0 +1,605 @@
+{% extends "base.html" %}
+
+{% block title %}Nouveau devis{% endblock %}
+
+{% block extra_head %}
+{{ products_data|json_script:"d-products" }}
+{{ services_data|json_script:"d-services" }}
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto" x-data="quoteCreate()">
+
+  {# ── En-tête ── #}
+  <div class="flex items-center gap-3 mb-5">
+    <a href="{% url 'devis:list' %}"
+       class="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors shadow-sm">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <h1 class="text-xl font-bold text-gray-900">Nouveau devis</h1>
+  </div>
+
+  {% if error %}
+  <div class="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium">{{ error }}</div>
+  {% endif %}
+
+  <div class="space-y-4">
+
+    {# ── Client ── #}
+    <div class="card p-4 space-y-3">
+      <h2 class="text-sm font-semibold text-gray-700">Client</h2>
+
+      <template x-if="selectedClient">
+        <div class="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-xl px-3 py-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-sm font-bold shrink-0">
+              <span x-text="selectedClient.name.charAt(0).toUpperCase()"></span>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-900" x-text="selectedClient.name"></p>
+              <p class="text-xs text-gray-400" x-text="selectedClient.phone || 'Pas de téléphone'"></p>
+            </div>
+          </div>
+          <button type="button" @click="clearClient()"
+                  class="p-1 text-gray-400 hover:text-red-500 transition-colors">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </template>
+
+      <template x-if="!selectedClient">
+        <div class="relative" @click.outside="clientResults = []">
+          <input type="text"
+                 x-model="clientQuery"
+                 @input="onClientInput()"
+                 @focus="onClientFocus()"
+                 @keydown.escape="clientResults = []"
+                 placeholder="Choisir ou rechercher un client…"
+                 class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+          <div x-show="clientResults.length > 0" x-transition
+               class="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+            <template x-for="c in clientResults" :key="c.id">
+              <button type="button" @click="selectClient(c)"
+                      class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+                <div class="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold shrink-0"
+                     x-text="c.name.charAt(0).toUpperCase()"></div>
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-900 truncate" x-text="c.name"></p>
+                  <p class="text-xs text-gray-400" x-text="c.phone || ''"></p>
+                </div>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <button type="button" @click="openNewClientModal()"
+              class="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+        </svg>
+        Créer un nouveau client
+      </button>
+    </div>
+
+    {# ── Produits ── #}
+    <div class="card p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+          </svg>
+          <h2 class="text-sm font-semibold text-gray-700">Produits</h2>
+          <span x-show="productCount > 0" x-text="productCount"
+                style="display:inline-flex;align-items:center;justify-content:center;height:18px;min-width:18px;border-radius:9999px;background:#0284c7;color:white;font-size:0.7rem;font-weight:700;padding:0 5px;"></span>
+        </div>
+        <button type="button" @click="modal = 'products'; searchQuery = ''"
+                class="btn-secondary text-xs py-1.5 px-3">+ Produit</button>
+      </div>
+
+      <template x-if="productItems.length === 0">
+        <p class="text-xs text-gray-400 py-2 text-center">Aucun produit ajouté</p>
+      </template>
+      <template x-if="productItems.length > 0">
+        <div class="divide-y divide-gray-100 -mx-4">
+          <template x-for="(item, idx) in cart" :key="idx">
+            <template x-if="item.type === 'product'">
+              <div class="flex items-center gap-3 px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
+                  <p class="text-xs text-gray-400"><span x-text="fmt(item.unit_price)"></span> FCFA / unité</p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button type="button" @click="changeQty(idx, -1)"
+                          class="h-7 w-7 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors text-sm font-bold">−</button>
+                  <span class="w-6 text-center text-sm font-semibold text-gray-900" x-text="item.qty"></span>
+                  <button type="button" @click="changeQty(idx, 1)"
+                          class="h-7 w-7 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors text-sm font-bold">+</button>
+                </div>
+                <div class="shrink-0 text-right w-24">
+                  <p class="text-sm font-semibold text-gray-900">
+                    <span x-text="fmt(parseFloat(item.unit_price) * item.qty)"></span>
+                    <span class="text-xs font-normal text-gray-400">FCFA</span>
+                  </p>
+                </div>
+                <button type="button" @click="removeItem(idx)" class="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    {# ── Prestations ── #}
+    <div class="card p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655"/>
+          </svg>
+          <h2 class="text-sm font-semibold text-gray-700">Prestations</h2>
+          <span x-show="serviceCount > 0" x-text="serviceCount"
+                style="display:inline-flex;align-items:center;justify-content:center;height:18px;min-width:18px;border-radius:9999px;background:#7c3aed;color:white;font-size:0.7rem;font-weight:700;padding:0 5px;"></span>
+        </div>
+        <button type="button" @click="modal = 'services'; searchQuery = ''"
+                class="btn-secondary text-xs py-1.5 px-3">+ Prestation</button>
+      </div>
+
+      <template x-if="serviceItems.length === 0">
+        <p class="text-xs text-gray-400 py-2 text-center">Aucune prestation ajoutée</p>
+      </template>
+      <template x-if="serviceItems.length > 0">
+        <div class="divide-y divide-gray-100 -mx-4">
+          <template x-for="(item, idx) in cart" :key="idx">
+            <template x-if="item.type === 'service'">
+              <div class="flex items-center gap-3 px-4 py-3" style="background:#faf5ff;">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
+                    <span style="font-size:0.65rem;font-weight:600;color:#7c3aed;background:#ede9fe;border-radius:9999px;padding:1px 7px;">Prestation</span>
+                  </div>
+                  <p class="text-xs text-gray-400 mt-0.5"><span x-text="fmt(item.unit_price)"></span> FCFA</p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button type="button" @click="changeQty(idx, -1)"
+                          class="h-7 w-7 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors text-sm font-bold">−</button>
+                  <span class="w-6 text-center text-sm font-semibold text-gray-900" x-text="item.qty"></span>
+                  <button type="button" @click="changeQty(idx, 1)"
+                          class="h-7 w-7 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors text-sm font-bold">+</button>
+                </div>
+                <div class="shrink-0 text-right w-24">
+                  <p class="text-sm font-semibold text-gray-900">
+                    <span x-text="fmt(parseFloat(item.unit_price) * item.qty)"></span>
+                    <span class="text-xs font-normal text-gray-400">FCFA</span>
+                  </p>
+                </div>
+                <button type="button" @click="removeItem(idx)" class="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    {# ── Articles libres ── #}
+    <div class="card p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125"/>
+          </svg>
+          <h2 class="text-sm font-semibold text-gray-700">Articles libres</h2>
+          <span x-show="customCount > 0" x-text="customCount"
+                style="display:inline-flex;align-items:center;justify-content:center;height:18px;min-width:18px;border-radius:9999px;background:#d97706;color:white;font-size:0.7rem;font-weight:700;padding:0 5px;"></span>
+        </div>
+        <button type="button" @click="openCustomModal()"
+                class="btn-secondary text-xs py-1.5 px-3">+ Article</button>
+      </div>
+      <p class="text-xs text-gray-400">Produits hors catalogue, articles tiers, frais divers…</p>
+
+      <template x-if="customItems.length > 0">
+        <div class="divide-y divide-gray-100 -mx-4">
+          <template x-for="(item, idx) in cart" :key="idx">
+            <template x-if="item.type === 'custom'">
+              <div class="flex items-center gap-3 px-4 py-3" style="background:#fffbeb;">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p>
+                    <span style="font-size:0.65rem;font-weight:600;color:#d97706;background:#fef3c7;border-radius:9999px;padding:1px 7px;">Libre</span>
+                  </div>
+                  <p class="text-xs text-gray-400 mt-0.5"><span x-text="fmt(item.unit_price)"></span> FCFA / unité</p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button type="button" @click="changeQty(idx, -1)"
+                          class="h-7 w-7 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors text-sm font-bold">−</button>
+                  <span class="w-6 text-center text-sm font-semibold text-gray-900" x-text="item.qty"></span>
+                  <button type="button" @click="changeQty(idx, 1)"
+                          class="h-7 w-7 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors text-sm font-bold">+</button>
+                </div>
+                <div class="shrink-0 text-right w-24">
+                  <p class="text-sm font-semibold text-gray-900">
+                    <span x-text="fmt(parseFloat(item.unit_price) * item.qty)"></span>
+                    <span class="text-xs font-normal text-gray-400">FCFA</span>
+                  </p>
+                </div>
+                <button type="button" @click="removeItem(idx)" class="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    {# ── Résumé ── #}
+    <template x-if="cart.length > 0">
+      <div class="card p-4">
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-semibold text-gray-700">Total devis</span>
+          <span class="text-lg font-bold text-gray-900"><span x-text="fmt(total)"></span> FCFA</span>
+        </div>
+      </div>
+    </template>
+
+    {# ── Options ── #}
+    <div class="card p-4 space-y-4">
+      <h2 class="text-sm font-semibold text-gray-700">Options</h2>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Date de validité <span class="text-gray-400">(optionnel)</span></label>
+        <input type="date"
+               x-model="validUntil"
+               :min="today"
+               class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Note / remarque <span class="text-gray-400">(optionnel)</span></label>
+        <textarea x-model="note" rows="3"
+                  placeholder="Conditions particulières, précisions sur les articles…"
+                  class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors resize-none"></textarea>
+      </div>
+    </div>
+
+    {# ── Bouton ── #}
+    <button type="button"
+            @click="submit()"
+            :disabled="cart.length === 0 || submitting"
+            class="w-full btn-primary py-4 text-base font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+      <template x-if="submitting">
+        <svg class="spinner-sm" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      </template>
+      <span x-text="submitting ? 'Enregistrement…' : 'Enregistrer le devis'"></span>
+    </button>
+
+  </div>
+
+  {# ── Modal Produits ── #}
+  <div x-show="modal === 'products'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null">
+    <div x-show="modal === 'products'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:scale-95 lg:opacity-0"
+         class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-lg shadow-2xl flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+        <h3 class="font-semibold text-gray-900">Choisir un produit</h3>
+        <button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-4 py-3 border-b border-gray-100 shrink-0">
+        <input type="text" x-model="searchQuery" placeholder="Rechercher un produit..."
+               class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+      </div>
+      <div class="overflow-y-auto flex-1">
+        <template x-if="productsByCategory.length === 0">
+          <div class="flex items-center justify-center py-10 text-sm text-gray-400">Aucun produit trouvé.</div>
+        </template>
+        <template x-for="group in productsByCategory" :key="group.key">
+          <div>
+            <div class="sticky top-0 z-10 bg-gray-50 px-5 py-2 border-y border-gray-100">
+              <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider" x-text="group.label"></span>
+            </div>
+            <template x-for="p in group.products" :key="p.id">
+              <button type="button" @click="addToCart(p, 'product')"
+                      class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors border-b border-gray-50">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-gray-900" x-text="p.name"></p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <p class="text-sm font-semibold text-gray-900"><span x-text="parseInt(p.selling_price).toLocaleString('fr-FR')"></span> FCFA</p>
+                  <span class="text-xs text-gray-400">Stock : <span x-text="p.stock_quantity"></span></span>
+                </div>
+              </button>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# ── Modal Prestations ── #}
+  <div x-show="modal === 'services'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null">
+    <div x-show="modal === 'services'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:scale-95 lg:opacity-0"
+         class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-lg shadow-2xl flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+        <h3 class="font-semibold text-gray-900">Choisir une prestation</h3>
+        <button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-4 py-3 border-b border-gray-100 shrink-0">
+        <input type="text" x-model="searchQuery" placeholder="Rechercher une prestation..."
+               class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+      </div>
+      <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
+        <template x-if="filteredServices.length === 0">
+          <div class="flex items-center justify-center py-10 text-sm text-gray-400">Aucune prestation trouvée.</div>
+        </template>
+        <template x-for="s in filteredServices" :key="s.id">
+          <button type="button" @click="addToCart(s, 'service')"
+                  class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="text-sm font-medium text-gray-900" x-text="s.name"></p>
+                <span class="badge-blue text-xs">Prestation</span>
+              </div>
+            </div>
+            <p class="text-sm font-semibold text-gray-900 shrink-0"><span x-text="parseInt(s.price).toLocaleString('fr-FR')"></span> FCFA</p>
+          </button>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# ── Modal Nouveau Client ── #}
+  <div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null">
+    <div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:scale-95 lg:opacity-0"
+         class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900">Nouveau client</h3>
+        <button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-4 py-5 space-y-4">
+        <template x-if="newClientError">
+          <p class="rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 font-medium" x-text="newClientError"></p>
+        </template>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Nom <span class="text-red-500">*</span></label>
+          <input type="text" x-model="newClientName" @keydown.enter="createClient()" placeholder="Nom du client"
+                 class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Téléphone <span class="text-gray-400">(optionnel)</span></label>
+          <input type="tel" x-model="newClientPhone" @keydown.enter="createClient()" placeholder="+228 90 00 00 00"
+                 class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+        </div>
+        <button type="button" @click="createClient()" :disabled="!newClientName.trim() || newClientSaving"
+                class="w-full btn-primary py-3 font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+          <template x-if="newClientSaving">
+            <svg class="spinner-sm" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+          </template>
+          <span x-text="newClientSaving ? 'Création…' : 'Créer le client'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Modal Article libre ── #}
+  <div x-show="modal === 'custom'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null">
+    <div x-show="modal === 'custom'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:scale-95 lg:opacity-0"
+         class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900">Article libre</h3>
+        <button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-4 py-5 space-y-4">
+        <template x-if="customItemError">
+          <p class="rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 font-medium" x-text="customItemError"></p>
+        </template>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Désignation <span class="text-red-500">*</span></label>
+          <input type="text" x-model="customLabel" placeholder="Ex : Pompe externe Eheim 600L/h"
+                 class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1.5">Prix unitaire <span class="text-red-500">*</span></label>
+            <input type="number" x-model="customPrice" min="0" step="1" placeholder="0"
+                   class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1.5">Quantité</label>
+            <input type="number" x-model="customQty" min="1" step="1" placeholder="1"
+                   class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+          </div>
+        </div>
+        <button type="button" @click="addCustomItem()" :disabled="!customLabel.trim() || !customPrice"
+                class="w-full btn-primary py-3 font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+          Ajouter au devis
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Formulaire caché ── #}
+  <form id="quote-form" method="post" x-ref="form" style="display:none">
+    {% csrf_token %}
+    <input type="hidden" id="inp-cart"        name="cart_data" />
+    <input type="hidden" id="inp-client"      name="client_id" />
+    <input type="hidden" id="inp-valid-until" name="valid_until" />
+    <input type="hidden" id="inp-note"        name="note" />
+  </form>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function quoteCreate() {
+  return {
+    products: JSON.parse(document.getElementById('d-products').textContent),
+    services: JSON.parse(document.getElementById('d-services').textContent),
+
+    clientQuery: '', clientTimeout: null, clientResults: [], selectedClient: null,
+    newClientName: '', newClientPhone: '', newClientSaving: false, newClientError: '',
+    customLabel: '', customPrice: '', customQty: 1, customItemError: '',
+
+    modal: null,
+    searchQuery: '',
+    cart: [],
+    validUntil: '',
+    note: '',
+    today: '{{ today }}',
+    submitting: false,
+
+    get productItems() { return this.cart.filter(i => i.type === 'product'); },
+    get serviceItems() { return this.cart.filter(i => i.type === 'service'); },
+    get customItems()  { return this.cart.filter(i => i.type === 'custom'); },
+    get productCount() { return this.productItems.reduce((s, i) => s + i.qty, 0); },
+    get serviceCount() { return this.serviceItems.reduce((s, i) => s + i.qty, 0); },
+    get customCount()  { return this.customItems.reduce((s, i) => s + i.qty, 0); },
+    get total() { return this.cart.reduce((s, i) => s + parseFloat(i.unit_price) * i.qty, 0); },
+
+    get filteredProducts() {
+      if (!this.searchQuery) return this.products;
+      const q = this.searchQuery.toLowerCase();
+      return this.products.filter(p => p.name.toLowerCase().includes(q));
+    },
+
+    get productsByCategory() {
+      const catLabels = { fish: 'Poissons', accessory: 'Accessoires', aquarium: 'Aquarium' };
+      const catOrder  = ['fish', 'aquarium', 'accessory'];
+      const groups = {};
+      for (const p of this.filteredProducts) {
+        const k = p.category_key || 'accessory';
+        if (!groups[k]) groups[k] = [];
+        groups[k].push(p);
+      }
+      return catOrder.filter(k => groups[k]).map(k => ({ key: k, label: catLabels[k] || k, products: groups[k] }));
+    },
+
+    get filteredServices() {
+      if (!this.searchQuery) return this.services;
+      const q = this.searchQuery.toLowerCase();
+      return this.services.filter(s => s.name.toLowerCase().includes(q));
+    },
+
+    async _fetchClients(q) {
+      try {
+        const r = await fetch('/ventes/api/clients/?q=' + encodeURIComponent(q));
+        this.clientResults = await r.json();
+      } catch(e) {}
+    },
+
+    onClientFocus() { if (!this.selectedClient && this.clientResults.length === 0) this._fetchClients(''); },
+    onClientInput() {
+      clearTimeout(this.clientTimeout);
+      this.selectedClient = null;
+      const q = this.clientQuery.trim();
+      if (!q) { this._fetchClients(''); return; }
+      this.clientTimeout = setTimeout(() => this._fetchClients(q), 350);
+    },
+    selectClient(c) { this.selectedClient = c; this.clientQuery = c.name; this.clientResults = []; },
+    clearClient() { this.selectedClient = null; this.clientQuery = ''; this.clientResults = []; },
+
+    openNewClientModal() {
+      this.newClientName = this.clientQuery.trim();
+      this.newClientPhone = ''; this.newClientError = '';
+      this.clientResults = []; this.modal = 'new_client';
+    },
+
+    async createClient() {
+      const name = this.newClientName.trim();
+      if (!name || this.newClientSaving) return;
+      this.newClientSaving = true; this.newClientError = '';
+      try {
+        const r = await fetch('/ventes/api/clients/creer/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+          body: JSON.stringify({ name, phone: this.newClientPhone.trim() }),
+        });
+        const data = await r.json();
+        if (!r.ok) { this.newClientError = data.error || 'Erreur lors de la création.'; return; }
+        this.selectClient(data); this.modal = null;
+      } catch(e) { this.newClientError = 'Erreur réseau.'; }
+      finally { this.newClientSaving = false; }
+    },
+
+    openCustomModal() {
+      this.customLabel = ''; this.customPrice = ''; this.customQty = 1; this.customItemError = '';
+      this.modal = 'custom';
+    },
+
+    addCustomItem() {
+      const label = this.customLabel.trim();
+      const price = parseFloat(this.customPrice);
+      const qty   = Math.max(1, parseInt(this.customQty) || 1);
+      if (!label) { this.customItemError = 'La désignation est requise.'; return; }
+      if (!price || price <= 0) { this.customItemError = 'Le prix doit être supérieur à 0.'; return; }
+      this.cart.push({ type: 'custom', id: null, name: label, unit_price: String(price), purchase_price: '0', qty });
+      this.modal = null;
+    },
+
+    addToCart(item, type) {
+      const existing = this.cart.find(i => i.type === type && i.id === item.id);
+      if (existing) { existing.qty++; }
+      else {
+        this.cart.push({
+          type, id: item.id, name: item.name,
+          unit_price: type === 'product' ? item.selling_price : item.price,
+          purchase_price: type === 'product' ? item.purchase_price : '0',
+          qty: 1,
+        });
+      }
+      this.modal = null; this.searchQuery = '';
+    },
+
+    removeItem(idx) { this.cart.splice(idx, 1); },
+    changeQty(idx, delta) {
+      const qty = this.cart[idx].qty + delta;
+      if (qty <= 0) this.cart.splice(idx, 1);
+      else this.cart[idx].qty = qty;
+    },
+
+    fmt(n) { return Math.round(parseFloat(n)).toLocaleString('fr-FR'); },
+
+    submit() {
+      if (this.cart.length === 0 || this.submitting) return;
+      this.submitting = true;
+      document.getElementById('inp-cart').value        = JSON.stringify(this.cart);
+      document.getElementById('inp-client').value      = this.selectedClient ? this.selectedClient.id : '';
+      document.getElementById('inp-valid-until').value = this.validUntil;
+      document.getElementById('inp-note').value        = this.note;
+      this.$refs.form.submit();
+    },
+  };
+}
+</script>
+{% endblock %}

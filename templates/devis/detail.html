@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Devis #{{ quote.pk|stringformat:"04d" }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-4">
+
+  {# ── En-tête ── #}
+  <div class="flex items-start gap-3">
+    <a href="{% url 'devis:list' %}"
+       class="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors shadow-sm shrink-0 mt-0.5">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-xl font-bold text-gray-900">Devis #{{ quote.pk|stringformat:"04d" }}</h1>
+        {% if quote.status == 'draft' %}
+          <span class="badge-gray">Brouillon</span>
+        {% elif quote.status == 'sent' %}
+          <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Envoyé</span>
+        {% elif quote.status == 'accepted' %}
+          <span class="badge-green">Accepté</span>
+        {% elif quote.status == 'rejected' %}
+          <span class="badge-red">Refusé</span>
+        {% else %}
+          <span class="badge-blue">Converti en vente</span>
+        {% endif %}
+        {% if quote.is_expired and quote.status not in 'converted rejected' %}
+          <span class="badge-red">Expiré</span>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2 mt-1 text-xs text-gray-400 flex-wrap">
+        <span>{{ quote.created_at|date:"d/m/Y" }}</span>
+        <span class="text-gray-200">·</span>
+        <span>Par {{ quote.created_by.get_full_name|default:quote.created_by.username }}</span>
+        {% if quote.client %}
+        <span class="text-gray-200">·</span>
+        <span class="font-medium text-gray-600">{{ quote.client.name }}</span>
+        {% endif %}
+        {% if quote.valid_until %}
+        <span class="text-gray-200">·</span>
+        <span {% if quote.is_expired %}class="text-red-500 font-medium"{% endif %}>
+          Valide jusqu'au {{ quote.valid_until|date:"d/m/Y" }}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Articles ── #}
+  <div class="card overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h2 class="text-sm font-semibold text-gray-700">Articles</h2>
+    </div>
+    <div class="divide-y divide-gray-50">
+      {% for item in items %}
+      <div class="flex items-center justify-between gap-3 px-4 py-3">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-900 truncate">{{ item.label }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">
+            {{ item.unit_price|floatformat:0 }} FCFA × {{ item.quantity }}
+            {% if item.service %}
+              <span class="ml-1 text-purple-500 font-medium">· Prestation</span>
+            {% endif %}
+          </p>
+        </div>
+        <div class="shrink-0 text-right">
+          <p class="text-sm font-semibold text-gray-900">{{ item.line_total|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span></p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="border-t border-gray-100 bg-gray-50 px-4 py-3 flex justify-between items-center">
+      <span class="text-sm font-semibold text-gray-700">Total</span>
+      <span class="text-base font-bold text-gray-900">{{ quote.total_amount|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span></span>
+    </div>
+  </div>
+
+  {# ── Note ── #}
+  {% if quote.note %}
+  <div class="card p-4">
+    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Note</p>
+    <p class="text-sm text-gray-700">{{ quote.note }}</p>
+  </div>
+  {% endif %}
+
+  {# ── Lien vente convertie ── #}
+  {% if quote.converted_sale %}
+  <div class="card p-4 bg-brand-50 border border-brand-200">
+    <div class="flex items-center justify-between">
+      <div>
+        <p class="text-xs font-semibold text-brand-600 uppercase tracking-wider mb-0.5">Vente associée</p>
+        <p class="text-sm font-semibold text-gray-900">Vente #{{ quote.converted_sale.pk|stringformat:"04d" }}</p>
+        <p class="text-xs text-gray-500">{{ quote.converted_sale.sale_date|date:"d/m/Y" }}</p>
+      </div>
+      <a href="{% url 'sales:detail' quote.converted_sale.pk %}" class="btn-secondary text-xs py-2 px-3">
+        Voir la vente →
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Changer le statut ── #}
+  {% if quote.status != 'converted' %}
+  <div class="card p-4 space-y-3">
+    <h2 class="text-sm font-semibold text-gray-700">Changer le statut</h2>
+    <div class="flex gap-2 flex-wrap">
+      {% if quote.status != 'draft' %}
+      <form method="post" action="{% url 'devis:update_status' quote.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="draft">
+        <button type="submit" class="px-3 py-2 rounded-xl border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+          Brouillon
+        </button>
+      </form>
+      {% endif %}
+      {% if quote.status != 'sent' %}
+      <form method="post" action="{% url 'devis:update_status' quote.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="sent">
+        <button type="submit" class="px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors">
+          Marquer Envoyé
+        </button>
+      </form>
+      {% endif %}
+      {% if quote.status != 'accepted' %}
+      <form method="post" action="{% url 'devis:update_status' quote.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="accepted">
+        <button type="submit" class="px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors">
+          Marquer Accepté
+        </button>
+      </form>
+      {% endif %}
+      {% if quote.status != 'rejected' %}
+      <form method="post" action="{% url 'devis:update_status' quote.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="rejected">
+        <button type="submit" class="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">
+          Marquer Refusé
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Actions ── #}
+  <div class="flex gap-2 pb-4 flex-wrap">
+    <a href="{% url 'devis:pdf' quote.pk %}"
+       class="btn-secondary flex items-center gap-2 flex-1 justify-center py-3">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
+      </svg>
+      Télécharger PDF
+    </a>
+
+    {% if quote.status != 'converted' and quote.status != 'rejected' %}
+    <form method="post" action="{% url 'devis:convert' quote.pk %}" class="flex-1">
+      {% csrf_token %}
+      <button type="submit"
+              class="w-full btn-primary flex items-center gap-2 justify-center py-3 font-semibold">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75"/>
+        </svg>
+        Convertir en vente
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

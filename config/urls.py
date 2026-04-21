@@ -27,6 +27,7 @@ urlpatterns = [
     path("prestations/", include("services.urls", namespace="services")),
     path("clients/", include("clients.urls", namespace="clients")),
     path("comptabilite/", include("accounting.urls", namespace="accounting")),
+    path("devis/", include("devis.urls", namespace="devis")),
 ]
 
 if settings.DEBUG:

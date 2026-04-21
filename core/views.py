@@ -25,6 +25,13 @@ class AquaLoginView(LoginView):
         messages.error(self.request, "Identifiant ou mot de passe incorrect.")
         return super().form_invalid(form)
 
+    def get_success_url(self):
+        from django.urls import reverse
+        profile = getattr(self.request.user, "profile", None)
+        if profile and profile.is_employe:
+            return reverse("services:execution_list")
+        return super().get_success_url()
+
 
 class AquaLogoutView(LogoutView):
     next_page = "core:login"
@@ -240,13 +247,10 @@ def dashboard_chart_data(request):
         key_fn = lambda d: d  # noqa: E731
     elif period == "year":
         from dateutil.relativedelta import relativedelta
-        chart_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-        chart_start = chart_start - timedelta(days=11 * 30)
-        chart_start = chart_start.replace(day=1)
+        chart_start = today.replace(day=1) - relativedelta(months=11)
         trunc_fn = TruncMonth
         date_fmt = "%b %Y"
-        days_range = [chart_start + timedelta(days=i * 30) for i in range(12)]
-        days_range = [d.replace(day=1) for d in days_range]
+        days_range = [chart_start + relativedelta(months=i) for i in range(12)]
         key_fn = lambda d: d.replace(day=1)  # noqa: E731
     elif period == "5years":
         from dateutil.relativedelta import relativedelta

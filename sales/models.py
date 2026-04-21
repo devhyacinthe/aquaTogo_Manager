@@ -115,6 +115,7 @@ class SaleItem(models.Model):
         blank=True,
         related_name="sale_items",
     )
+    label = models.CharField(max_length=255, blank=True, default="")
     quantity = models.PositiveIntegerField(default=1)
     # Snapshot des prix au moment de la vente
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -132,12 +133,17 @@ class SaleItem(models.Model):
         verbose_name_plural = "Lignes de vente"
 
     def __str__(self):
-        label = self.product.name if self.product else self.service.name
-        return f"{label} × {self.quantity}"
+        if self.product:
+            name = self.product.name
+        elif self.service:
+            name = self.service.name
+        else:
+            name = self.label or "Article"
+        return f"{name} × {self.quantity}"
 
     def clean(self):
-        if not self.product and not self.service:
-            raise ValidationError("Une ligne doit référencer un produit ou une prestation.")
+        if not self.product and not self.service and not self.label:
+            raise ValidationError("Une ligne doit référencer un produit, une prestation, ou avoir un libellé.")
         if self.product and self.service:
             raise ValidationError("Une ligne ne peut pas référencer un produit ET une prestation.")
 

@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "clients",
     "sales",
     "accounting",
+    "devis",
 ]
 
 MIDDLEWARE = [
@@ -43,6 +44,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "core.middleware.RoleAccessMiddleware",
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -57,6 +59,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.user_role',
             ],
         },
     },
