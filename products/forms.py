@@ -28,6 +28,7 @@ class ProductForm(forms.ModelForm):
             "description",
             "purchase_price",
             "selling_price",
+            "wholesale_price",
             "stock_quantity",
             "low_stock_threshold",
             "image",
@@ -49,5 +50,7 @@ class ProductForm(forms.ModelForm):
         self.fields["image"].widget.attrs["accept"] = "image/*"
         self.fields["purchase_price"].widget.attrs["placeholder"] = "0"
         self.fields["selling_price"].widget.attrs["placeholder"] = "0"
+        self.fields["wholesale_price"].widget.attrs["placeholder"] = "Optionnel"
+        self.fields["wholesale_price"].required = False
         self.fields["stock_quantity"].widget.attrs["min"] = "0"
         self.fields["low_stock_threshold"].widget.attrs["min"] = "0"

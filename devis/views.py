@@ -57,6 +57,7 @@ def quote_create(request):
             "category": p.category.name,
             "category_key": p.category.slug,
             "selling_price": str(p.selling_price),
+            "wholesale_price": str(p.wholesale_price) if p.wholesale_price is not None else None,
             "purchase_price": str(p.purchase_price),
             "stock_quantity": p.stock_quantity,
             "is_out_of_stock": p.is_out_of_stock,

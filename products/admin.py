@@ -21,6 +21,7 @@ class ProductAdmin(admin.ModelAdmin):
         "category",
         "purchase_price",
         "selling_price",
+        "wholesale_price",
         "margin_display",
         "stock_quantity",
         "stock_status",
@@ -42,7 +43,7 @@ class ProductAdmin(admin.ModelAdmin):
             "fields": ("image", "image_preview"),
         }),
         ("Prix", {
-            "fields": ("purchase_price", "selling_price"),
+            "fields": ("purchase_price", "selling_price", "wholesale_price"),
         }),
         ("Stock", {
             "fields": ("stock_quantity", "low_stock_threshold"),

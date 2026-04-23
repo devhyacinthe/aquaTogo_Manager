@@ -1,5 +1,7 @@
 import csv
 import json as _json
+import re
+import urllib.parse
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -140,6 +142,7 @@ def sale_create(request):
             "category": p.category.name,
             "category_key": p.category.slug,
             "selling_price": str(p.selling_price),
+            "wholesale_price": str(p.wholesale_price) if p.wholesale_price is not None else None,
             "purchase_price": str(p.purchase_price),
             "stock_quantity": p.stock_quantity,
             "is_out_of_stock": p.is_out_of_stock,
@@ -299,7 +302,47 @@ def sale_detail(request, pk):
         .prefetch_related("items__product", "items__service", "payments__recorded_by"),
         pk=pk,
     )
-    return render(request, "sales/detail.html", {"sale": sale})
+
+    whatsapp_text = _build_whatsapp_message(sale)
+    encoded_text = urllib.parse.quote(whatsapp_text)
+
+    whatsapp_url = f"https://api.whatsapp.com/send?text={encoded_text}"
+    if sale.client and sale.client.phone:
+        phone = re.sub(r"\D", "", sale.client.phone)
+        if phone.startswith("00"):
+            phone = phone[2:]
+        elif phone.startswith("0"):
+            phone = "228" + phone[1:]
+        if phone:
+            whatsapp_url = f"https://wa.me/{phone}?text={encoded_text}"
+
+    return render(request, "sales/detail.html", {
+        "sale": sale,
+        "whatsapp_url": whatsapp_url,
+        "whatsapp_text": whatsapp_text,
+    })
+
+
+def _build_whatsapp_message(sale) -> str:
+    date_fr = sale.sale_date.strftime("%d/%m/%Y")
+    lines = [f"*Commande AquaTogo* — {date_fr}"]
+    if sale.client:
+        lines.append(f"Client : {sale.client.name}")
+    lines.append("")
+    for item in sale.items.all():
+        if item.product:
+            name = item.product.name
+        elif item.service:
+            name = item.service.name
+        else:
+            name = "Article supprimé"
+        unit = f"{item.unit_price:,.0f}".replace(",", " ")
+        total = f"{item.line_total:,.0f}".replace(",", " ")
+        lines.append(f"- {name} x{item.quantity} ({unit} FCFA) : *{total} FCFA*")
+    lines.append("")
+    total_fmt = f"{sale.total_amount:,.0f}".replace(",", " ")
+    lines.append(f"*Total : {total_fmt} FCFA*")
+    return "\n".join(lines)
 
 
 # ── sale_add_payment ──────────────────────────────────────────────────────────
@@ -368,6 +411,7 @@ def api_products(_request):
             "name": p.name,
             "category": p.category.name,
             "selling_price": str(p.selling_price),
+            "wholesale_price": str(p.wholesale_price) if p.wholesale_price is not None else None,
             "purchase_price": str(p.purchase_price),
             "stock_quantity": p.stock_quantity,
             "is_out_of_stock": p.is_out_of_stock,

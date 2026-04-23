@@ -92,7 +92,7 @@
       Prix (FCFA)
     </h2>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <!-- Prix d'achat -->
       <div>
         <label for="{{ form.purchase_price.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
@@ -107,10 +107,10 @@
         {% endif %}
       </div>
 
-      <!-- Prix de vente -->
+      <!-- Prix détail -->
       <div>
         <label for="{{ form.selling_price.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
-          Prix de vente <span class="text-red-500">*</span>
+          Prix détail <span class="text-red-500">*</span>
         </label>
         <div class="relative">
           {{ form.selling_price }}
@@ -118,6 +118,20 @@
         </div>
         {% if form.selling_price.errors %}
         <p class="mt-1 text-xs text-red-600">{{ form.selling_price.errors|join:", " }}</p>
+        {% endif %}
+      </div>
+
+      <!-- Prix gros -->
+      <div>
+        <label for="{{ form.wholesale_price.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1.5">
+          Prix gros <span class="text-xs text-gray-400 font-normal">(optionnel)</span>
+        </label>
+        <div class="relative">
+          {{ form.wholesale_price }}
+          <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">FCFA</span>
+        </div>
+        {% if form.wholesale_price.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ form.wholesale_price.errors|join:", " }}</p>
         {% endif %}
       </div>
     </div>

@@ -382,19 +382,13 @@
               <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider" x-text="group.label"></span>
             </div>
             <template x-for="p in group.products" :key="p.id">
-              <button type="button"
-                      @click="!p.is_out_of_stock && addToCart(p, 'product')"
-                      :class="p.is_out_of_stock ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 active:bg-gray-100'"
-                      class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors border-b border-gray-50">
+              <div class="flex w-full items-center justify-between gap-3 px-5 py-3 border-b border-gray-50"
+                   :class="p.is_out_of_stock ? 'opacity-50' : ''">
+                {# Infos produit #}
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-medium text-gray-900" x-text="p.name"></p>
                   <p class="text-xs text-gray-400 mt-0.5">
-                    Achat : <span x-text="p.purchase_price"></span> FCFA
-                  </p>
-                </div>
-                <div class="shrink-0 text-right">
-                  <p class="text-sm font-semibold text-gray-900">
-                    <span x-text="parseInt(p.selling_price).toLocaleString('fr-FR')"></span> FCFA
+                    Achat : <span x-text="parseInt(p.purchase_price).toLocaleString('fr-FR')"></span> FCFA
                   </p>
                   <template x-if="p.is_out_of_stock">
                     <span class="badge-red text-xs">Rupture</span>
@@ -403,7 +397,26 @@
                     <span class="text-xs text-gray-400">Stock : <span x-text="p.stock_quantity"></span></span>
                   </template>
                 </div>
-              </button>
+                {# Boutons prix #}
+                <div class="shrink-0 flex flex-col items-end gap-1">
+                  {# Détail — toujours visible #}
+                  <button type="button"
+                          :disabled="p.is_out_of_stock"
+                          @click="!p.is_out_of_stock && addToCart(p, 'product', p.selling_price)"
+                          class="rounded px-2 py-1 text-xs font-semibold bg-brand-50 text-brand-700 hover:bg-brand-100 active:bg-brand-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    Détail <span x-text="parseInt(p.selling_price).toLocaleString('fr-FR')"></span>
+                  </button>
+                  {# Gros — uniquement si wholesale_price renseigné #}
+                  <template x-if="p.wholesale_price !== null">
+                    <button type="button"
+                            :disabled="p.is_out_of_stock"
+                            @click="!p.is_out_of_stock && addToCart(p, 'product', p.wholesale_price)"
+                            class="rounded px-2 py-1 text-xs font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      Gros <span x-text="parseInt(p.wholesale_price).toLocaleString('fr-FR')"></span>
+                    </button>
+                  </template>
+                </div>
+              </div>
             </template>
           </div>
         </template>
@@ -884,16 +897,20 @@ function saleCreate() {
       this.searchQuery = '';
     },
 
-    addToCart(item, type) {
-      const existing = this.cart.find(i => i.type === type && i.id === item.id);
+    addToCart(item, type, overridePrice = null) {
+      const unitPrice = overridePrice ?? (type === 'product' ? item.selling_price : item.price);
+      // Un produit peut être ajouté deux fois (gros et détail) → clé composite id+prix
+      const cartKey = type === 'product' ? `${item.id}-${unitPrice}` : `svc-${item.id}`;
+      const existing = this.cart.find(i => i._key === cartKey);
       if (existing) {
         existing.qty++;
       } else {
         this.cart.push({
+          _key: cartKey,
           type,
           id: item.id,
           name: item.name,
-          unit_price: type === 'product' ? item.selling_price : item.price,
+          unit_price: unitPrice,
           purchase_price: type === 'product' ? item.purchase_price : '0',
           qty: 1,
           stock: item.stock_quantity || null,
