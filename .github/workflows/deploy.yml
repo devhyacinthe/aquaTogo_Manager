@@ -1,0 +1,49 @@
+name: Deploy - AquaTogo
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Récupérer le code ────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Configurer SSH ───────────────────────────────────────────────────
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.VPS_PORT }} -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      # ── 3. rsync — transfert différentiel du code ───────────────────────────
+      - name: Sync code → VPS
+        run: |
+          rsync -avz --progress \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='.env' \
+            --exclude='.env.prod' \
+            --exclude='media/' \
+            --exclude='node_modules/' \
+            --exclude='.git/' \
+            --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.VPS_PORT }} -o StrictHostKeyChecking=no" \
+            ./ \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/home/deploy-admin/deployments/sites_internes/aqua_togo/aquaTogo_Manager/
+
+      # ── 4. Rebuild + redémarrage ────────────────────────────────────────────
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -p ${{ secrets.VPS_PORT }} \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+              "DEPLOY_PROJECT=aquatogo /home/deploy-admin/deploy.sh"
