@@ -96,7 +96,9 @@
             {% endif %}
             <div class="min-w-0">
               <p class="text-sm font-medium text-gray-900 truncate">{{ ex.client.name }}</p>
-              <p class="text-xs text-gray-400 truncate">{{ ex.service.name }}</p>
+              <p class="text-xs text-gray-400 truncate">
+                {{ ex.service.name }}{% if ex.tours_per_month %} · <span class="font-semibold text-gray-600">T{{ ex.tour_number }}</span>{% endif %}
+              </p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">

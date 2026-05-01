@@ -99,6 +99,11 @@ class ServiceExecution(models.Model):
         choices=TOURS_CHOICES,
         help_text="Nombre de tours d'entretien par mois. Détermine l'intervalle entre deux passages.",
     )
+    start_tour = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Numéro de ce tour dans le cycle mensuel (1-4). Null = Tour 1.",
+    )
     execution_date = models.DateField()
     next_due_date = models.DateField(
         null=True,

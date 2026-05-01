@@ -197,10 +197,10 @@
                   </div>
                   <p class="text-xs text-gray-400 mt-0.5">
                     <template x-if="item.qty > 1">
-                      <span><span x-text="item.qty"></span> tours × <span x-text="fmt(item.unit_price)"></span> FCFA</span>
+                      <span>Tours <span x-text="item.start_tour"></span>→<span x-text="((item.start_tour - 1 + item.qty - 1) % (item.tours_per_month || item.qty)) + 1"></span> · <span x-text="item.qty"></span>×<span x-text="fmt(item.unit_price)"></span> FCFA</span>
                     </template>
                     <template x-if="item.qty === 1">
-                      <span><span x-text="fmt(item.unit_price)"></span> FCFA</span>
+                      <span>Tour <span x-text="item.start_tour || 1"></span> · <span x-text="fmt(item.unit_price)"></span> FCFA</span>
                     </template>
                     <template x-if="item.tours_per_month">
                       <span> · <span x-text="item.tours_label"></span></span>
@@ -433,7 +433,7 @@
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0"
        class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4"
-       @click.self="modal = null; pendingService = null; pendingTours = null">
+       @click.self="modal = null; pendingService = null; pendingTours = null; pendingStartTour = null">
 
     <div x-show="modal === 'services'"
          x-transition:enter="transition ease-out duration-200"
@@ -447,8 +447,8 @@
       {# En-tête modal #}
       <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
         <h3 class="font-semibold text-gray-900"
-            x-text="pendingTours ? 'Mode de paiement' : pendingService ? 'Fréquence d\'entretien' : 'Choisir une prestation'"></h3>
-        <button type="button" @click="modal = null; pendingService = null; pendingTours = null"
+            x-text="(pendingTours && pendingStartTour !== null) ? 'Mode de paiement' : (pendingTours && pendingStartTour === null) ? 'Quel tour démarre ?' : pendingService ? 'Fréquence d\'entretien' : 'Choisir une prestation'"></h3>
+        <button type="button" @click="modal = null; pendingService = null; pendingTours = null; pendingStartTour = null"
                 class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
@@ -548,8 +548,43 @@
         </div>
       </template>
 
-      {# Étape 3 : Mode de paiement (tours > 1) #}
-      <template x-if="pendingTours && pendingTours > 1">
+      {# Étape 2b : Quel tour débute ? (tours > 1, start_tour pas encore choisi) #}
+      <template x-if="pendingService && pendingTours && pendingTours > 1 && pendingStartTour === null">
+        <div class="flex-1 flex flex-col overflow-y-auto">
+          <div class="px-5 py-4 bg-purple-50 border-b border-purple-100">
+            <p class="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Tour de départ</p>
+            <p class="text-base font-semibold text-gray-900" x-text="pendingService.name"></p>
+            <p class="text-sm text-gray-500 mt-0.5">
+              <span x-text="(toursOptions.find(o => o.value === pendingTours) || {}).label || ''"></span>
+            </p>
+          </div>
+
+          <div class="px-5 py-5 space-y-3">
+            <p class="text-sm font-semibold text-gray-700">Ce passage est le tour…</p>
+            <div class="grid grid-cols-2 gap-3">
+              <template x-for="n in pendingTours" :key="n">
+                <button type="button"
+                        @click="confirmStartTour(n)"
+                        class="flex flex-col items-center justify-center py-4 rounded-xl border-2 border-gray-200 hover:border-purple-400 hover:bg-purple-50 active:bg-purple-100 transition-colors">
+                  <span class="text-2xl font-bold text-gray-800" x-text="n"></span>
+                  <span class="text-xs text-gray-400 mt-0.5">Tour <span x-text="n"></span></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <div class="px-5 pb-5">
+            <button type="button"
+                    @click="pendingTours = null; pendingStartTour = null; searchQuery = ''"
+                    class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+              ← Changer la fréquence
+            </button>
+          </div>
+        </div>
+      </template>
+
+      {# Étape 3 : Mode de paiement (tours > 1, start_tour choisi) #}
+      <template x-if="pendingTours && pendingTours > 1 && pendingStartTour !== null">
         <div class="flex-1 flex flex-col overflow-y-auto">
           {# Récap prestation + fréquence #}
           <div class="px-5 py-4 bg-purple-50 border-b border-purple-100">
@@ -569,7 +604,7 @@
                     class="w-full text-left px-4 py-4 rounded-xl border-2 border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:bg-brand-100 transition-colors group">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-semibold text-gray-900">Tour suivant seulement</p>
+                  <p class="text-sm font-semibold text-gray-900">Tour <span x-text="pendingStartTour"></span> seulement</p>
                   <p class="text-xs text-gray-400 mt-0.5">
                     1 passage ×
                     <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
@@ -583,36 +618,38 @@
               </div>
             </button>
 
-            {# Option : tous les tours du mois #}
-            <button type="button"
-                    @click="confirmPayMode(true)"
-                    class="w-full text-left px-4 py-4 rounded-xl border-2 border-green-200 hover:border-green-500 hover:bg-green-50 active:bg-green-100 transition-colors group">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-semibold text-gray-900">
-                    Tous les tours du mois
-                    <span class="ml-1.5 text-xs font-medium text-green-600 bg-green-100 rounded-full px-2 py-0.5">Recommandé</span>
-                  </p>
-                  <p class="text-xs text-gray-400 mt-0.5">
-                    <span x-text="pendingTours"></span> passages ×
-                    <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
-                    = <strong x-text="(pendingTours * parseInt(pendingService && pendingService.price)).toLocaleString('fr-FR')"></strong> FCFA
-                  </p>
-                  <p class="text-xs text-gray-400 mt-1">Tous les passages sont pré-planifiés dans le calendrier.</p>
+            {# Option : tous les tours restants #}
+            <template x-if="pendingTours - pendingStartTour > 0">
+              <button type="button"
+                      @click="confirmPayMode(true)"
+                      class="w-full text-left px-4 py-4 rounded-xl border-2 border-green-200 hover:border-green-500 hover:bg-green-50 active:bg-green-100 transition-colors group">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-semibold text-gray-900">
+                      Tours <span x-text="pendingStartTour"></span> → <span x-text="pendingTours"></span>
+                      <span class="ml-1.5 text-xs font-medium text-green-600 bg-green-100 rounded-full px-2 py-0.5">Recommandé</span>
+                    </p>
+                    <p class="text-xs text-gray-400 mt-0.5">
+                      <span x-text="pendingTours - pendingStartTour + 1"></span> passages ×
+                      <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
+                      = <strong x-text="((pendingTours - pendingStartTour + 1) * parseInt(pendingService && pendingService.price)).toLocaleString('fr-FR')"></strong> FCFA
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1">Tous les passages restants pré-planifiés dans le calendrier.</p>
+                  </div>
+                  <svg class="h-5 w-5 text-gray-300 group-hover:text-green-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                  </svg>
                 </div>
-                <svg class="h-5 w-5 text-gray-300 group-hover:text-green-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
-                </svg>
-              </div>
-            </button>
+              </button>
+            </template>
           </div>
 
-          {# Retour à la fréquence #}
+          {# Retour au choix du tour #}
           <div class="px-5 pb-5">
             <button type="button"
-                    @click="pendingTours = null"
+                    @click="pendingStartTour = null"
                     class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">
-              ← Changer la fréquence
+              ← Changer le tour de départ
             </button>
           </div>
         </div>
@@ -724,7 +761,8 @@ function saleCreate() {
     modal: null,
     searchQuery: '',
     pendingService: null,
-    pendingTours: null,   // tours_per_month sélectionné, en attente du mode de paiement
+    pendingTours: null,       // tours_per_month sélectionné
+    pendingStartTour: null,   // numéro du premier tour (1-4)
 
     // Constantes tours
     toursOptions: [
@@ -859,23 +897,31 @@ function saleCreate() {
     },
 
     confirmServiceWithTours(tours) {
-      // tours = null → ponctuel, pas d'étape paiement
-      // tours = 1   → 1 seul tour possible, pas de choix
-      // tours > 1   → afficher le choix paiement
       if (!tours || tours === 1) {
-        this._addServiceToCart(tours, 1);
+        this._addServiceToCart(tours, 1, 1);
       } else {
         this.pendingTours = tours;
+        this.pendingStartTour = null;
       }
+    },
+
+    confirmStartTour(n) {
+      this.pendingStartTour = n;
+      // Si c'est le dernier tour du cycle, on ajoute directement sans choix de paiement
+      if (n === this.pendingTours) {
+        this._addServiceToCart(this.pendingTours, 1, n);
+      }
+      // Sinon, on passe à l'étape "Mode de paiement"
     },
 
     confirmPayMode(payAll) {
       const tours = this.pendingTours;
-      const qty = payAll ? tours : 1;
-      this._addServiceToCart(tours, qty);
+      const start = this.pendingStartTour || 1;
+      const qty = payAll ? (tours - start + 1) : 1;
+      this._addServiceToCart(tours, qty, start);
     },
 
-    _addServiceToCart(tours, qty) {
+    _addServiceToCart(tours, qty, startTour) {
       const s = this.pendingService;
       if (!s) return;
       const opt = tours ? this.toursOptions.find(o => o.value === tours) : null;
@@ -890,9 +936,11 @@ function saleCreate() {
         stock: null,
         tours_per_month: tours,
         tours_label: toursLabel,
+        start_tour: startTour || 1,
       });
       this.pendingService = null;
       this.pendingTours = null;
+      this.pendingStartTour = null;
       this.modal = null;
       this.searchQuery = '';
     },

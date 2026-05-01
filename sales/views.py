@@ -247,6 +247,8 @@ def sale_create(request):
                         service_obj = Service.objects.get(pk=item_id)
                         tours_per_month_raw = item.get("tours_per_month")
                         tours_per_month = int(tours_per_month_raw) if tours_per_month_raw else None
+                        start_tour_raw = item.get("start_tour")
+                        start_tour = int(start_tour_raw) if start_tour_raw else 1
                         sale_item = SaleItem.objects.create(
                             sale=sale,
                             service=service_obj,
@@ -261,6 +263,7 @@ def sale_create(request):
                             sale_item=sale_item,
                             execution_date=sale.sale_date,
                             tours_per_month=tours_per_month,
+                            start_tour=start_tour,
                         )
                         # Passages suivants pré-planifiés si le client paye plusieurs tours
                         if qty > 1 and tours_per_month:
@@ -269,16 +272,17 @@ def sale_create(request):
                             prev_date = sale.sale_date
                             for i in range(1, qty):
                                 raw_date = prev_date + timedelta(days=interval)
-                                # Ajuste au même jour de semaine que le premier passage
                                 offset = (sale.sale_date.weekday() - raw_date.weekday()) % 7
                                 next_date = raw_date + timedelta(days=offset)
                                 prev_date = next_date
+                                child_tour = ((start_tour - 1 + i) % tours_per_month) + 1
                                 ServiceExecution.objects.create(
                                     client=client,
                                     service=service_obj,
                                     tours_per_month=tours_per_month,
                                     execution_date=next_date,
                                     parent_execution=first_exec,
+                                    start_tour=child_tour,
                                 )
 
                 sale.recompute_totals()

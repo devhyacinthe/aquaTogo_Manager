@@ -15,6 +15,39 @@ from .forms import ServiceForm
 from .models import Service, ServiceExecution
 
 
+def _assign_tour_numbers(execution_list: list) -> None:
+    """Attribue `tour_number` à chaque exécution.
+    Priorité : start_tour si renseigné, sinon position parmi les frères (anciennes données).
+    """
+    children_without_start = [
+        ex for ex in execution_list
+        if ex.start_tour is None and ex.parent_execution_id
+    ]
+    position_map: dict = {}
+    if children_without_start:
+        parent_ids = {ex.parent_execution_id for ex in children_without_start}
+        rows = (
+            ServiceExecution.objects
+            .filter(parent_execution_id__in=parent_ids)
+            .order_by("execution_date")
+            .values("id", "parent_execution_id")
+        )
+        groups: dict = {}
+        for row in rows:
+            groups.setdefault(row["parent_execution_id"], []).append(row["id"])
+        for pid, ids in groups.items():
+            for i, cid in enumerate(ids):
+                position_map[(pid, cid)] = i + 2  # premier enfant = Tour 2
+
+    for ex in execution_list:
+        if ex.start_tour:
+            ex.tour_number = ex.start_tour
+        elif ex.parent_execution_id:
+            ex.tour_number = position_map.get((ex.parent_execution_id, ex.id), 2)
+        else:
+            ex.tour_number = 1
+
+
 @login_required
 def service_list(request):
     services = Service.objects.filter(is_active=True).order_by("name")
@@ -87,6 +120,7 @@ def service_detail(request, pk):
     for head in head_execs:
         children = list(head.children.all())
         members = [head] + children
+        _assign_tour_numbers(members)
         all_done = all(m.is_completed for m in members)
         any_done = any(m.is_completed for m in members)
         execution_groups.append({
@@ -98,17 +132,18 @@ def service_detail(request, pk):
             "any_done": any_done,
         })
 
-    upcoming = (
+    upcoming_list = list(
         ServiceExecution.objects
         .filter(service=service, is_completed=False, next_due_date__isnull=False)
         .select_related("client")
         .order_by("next_due_date")
     )
+    _assign_tour_numbers(upcoming_list)
 
     context = {
         "service": service,
         "execution_groups": execution_groups,
-        "upcoming": upcoming,
+        "upcoming": upcoming_list,
         "is_staff": request.user.is_staff,
         "today": timezone.now().date(),
         "app_name": "services",
@@ -171,13 +206,16 @@ def execution_list(request):
     if periode == "today":
         qs = qs.filter(next_due_date__lte=today)
     elif periode == "all":
-        pass  # tout afficher
+        pass
     else:
         periode = "week"
         qs = qs.filter(next_due_date__lte=today + timedelta(days=6))
 
+    executions = list(qs)
+    _assign_tour_numbers(executions)
+
     context = {
-        "executions": qs,
+        "executions": executions,
         "today": today,
         "periode": periode,
         "app_name": "services",
@@ -301,12 +339,13 @@ def calendar_week(request):
     week_start = ref - timedelta(days=ref.weekday())  # Monday
     week_end = week_start + timedelta(days=6)
 
-    executions = (
+    executions = list(
         ServiceExecution.objects
         .filter(next_due_date__gte=week_start, next_due_date__lte=week_end)
         .select_related("client", "service")
         .order_by("scheduled_time", "client__name")
     )
+    _assign_tour_numbers(executions)
 
     by_date = defaultdict(list)
     for ex in executions:
@@ -343,11 +382,12 @@ def calendar_month(request):
     first_day = _date(year, month, 1)
     last_day = _date(year, month, _cal.monthrange(year, month)[1])
 
-    executions = (
+    executions = list(
         ServiceExecution.objects
         .filter(next_due_date__gte=first_day, next_due_date__lte=last_day)
         .select_related("client", "service")
     )
+    _assign_tour_numbers(executions)
 
     by_day = defaultdict(list)
     for ex in executions:
@@ -399,12 +439,13 @@ def calendar_day(request):
     selected = _parse_date(request.GET.get("date", ""))
     today = timezone.now().date()
 
-    executions = (
+    executions = list(
         ServiceExecution.objects
         .filter(next_due_date=selected)
         .select_related("client", "service")
         .order_by("scheduled_time", "client__name")
     )
+    _assign_tour_numbers(executions)
 
     context = {
         "selected_date": selected,
@@ -448,11 +489,15 @@ def execution_complete(request, pk):
                 is_completed=False,
             ).exists()
             if not already_exists:
+                next_start_tour = None
+                if execution.start_tour and execution.tours_per_month:
+                    next_start_tour = (execution.start_tour % execution.tours_per_month) + 1
                 ServiceExecution.objects.create(
                     client=execution.client,
                     service=execution.service,
                     tours_per_month=execution.tours_per_month,
                     execution_date=next_date,
+                    start_tour=next_start_tour,
                 )
                 messages.success(
                     request,

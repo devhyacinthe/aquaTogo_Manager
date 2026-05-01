@@ -72,13 +72,14 @@
             {{ ex.client.name }}
           </a>
           <p class="text-xs mt-0.5 {% if ex.is_overdue %}text-red-600{% elif ex.next_due_date == today %}text-yellow-600{% else %}text-blue-500{% endif %}">
+            <span class="font-semibold">Tour {{ ex.tour_number }}</span>
             {% if ex.is_overdue %}
-            En retard — prévu le {{ ex.next_due_date|date:"d/m/Y" }}
+            — En retard depuis le {{ ex.next_due_date|date:"d/m/Y" }}
             {% elif ex.next_due_date == today %}
-            Aujourd'hui
+            — Aujourd'hui
             {% else %}
-            Le {{ ex.next_due_date|date:"d/m/Y" }}
-            {% if ex.days_until_due is not None %}— dans {{ ex.days_until_due }} jour{{ ex.days_until_due|pluralize }}{% endif %}
+            — Le {{ ex.next_due_date|date:"d/m/Y" }}
+            {% if ex.days_until_due is not None %}· dans {{ ex.days_until_due }} jour{{ ex.days_until_due|pluralize }}{% endif %}
             {% endif %}
           </p>
         </div>
@@ -165,7 +166,8 @@
               <svg class="h-3 w-3 shrink-0 {% if member.is_completed %}text-green-500{% else %}text-gray-300{% endif %}" fill="currentColor" viewBox="0 0 8 8">
                 <circle cx="4" cy="4" r="4"/>
               </svg>
-              <span class="text-xs text-gray-600">{% if member.next_due_date %}{{ member.next_due_date|date:"d/m/Y" }}{% else %}{{ member.execution_date|date:"d/m/Y" }}{% endif %}</span>
+              <span class="text-xs font-semibold text-gray-700">Tour {{ member.tour_number }}</span>
+              <span class="text-xs text-gray-400">— {% if member.next_due_date %}{{ member.next_due_date|date:"d/m/Y" }}{% else %}{{ member.execution_date|date:"d/m/Y" }}{% endif %}</span>
             </div>
             {% if member.is_completed %}
             <span class="badge-green text-xs shrink-0">Effectué</span>
@@ -192,7 +194,10 @@
           {% else %}
           <span class="text-sm font-medium text-gray-500 italic">Client anonyme</span>
           {% endif %}
-          <p class="text-xs text-gray-400 mt-0.5">{% if head.next_due_date %}{{ head.next_due_date|date:"d/m/Y" }}{% else %}{{ head.execution_date|date:"d/m/Y" }}{% endif %}</p>
+          <p class="text-xs text-gray-400 mt-0.5">
+            <span class="font-semibold text-gray-600">Tour {{ head.tour_number }}</span>
+            — {% if head.next_due_date %}{{ head.next_due_date|date:"d/m/Y" }}{% else %}{{ head.execution_date|date:"d/m/Y" }}{% endif %}
+          </p>
         </div>
         {% if head.sale_item %}
         <div class="shrink-0 text-right">

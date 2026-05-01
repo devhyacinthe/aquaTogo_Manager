@@ -96,6 +96,7 @@
 
         <div class="flex items-center justify-between gap-3 mt-2">
           <div class="text-xs text-gray-500">
+            {% if ex.tours_per_month %}<span class="font-semibold text-gray-700">Tour {{ ex.tour_number }}</span> — {% endif %}
             {% if ex.is_overdue %}
             <span class="text-red-600 font-medium">
               Prévu le {{ ex.next_due_date|date:"d/m/Y" }}
