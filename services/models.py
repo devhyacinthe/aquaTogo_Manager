@@ -55,13 +55,13 @@ class Service(models.Model):
 
 
 # Délai en jours selon le nombre de tours par mois
-_TOURS_DELAY: dict[int, int] = {1: 30, 2: 15, 3: 10, 4: 7}
+_TOURS_DELAY: dict[int, int] = {1: 30, 2: 14, 3: 10, 4: 7}
 
 TOURS_CHOICES = [
     (1, "1 tour / mois — tous les 30 jours"),
-    (2, "2 tours / mois — tous les 15 jours"),
+    (2, "2 tours / mois — toutes les 2 semaines"),
     (3, "3 tours / mois — tous les 10 jours"),
-    (4, "4 tours / mois — tous les 7 jours"),
+    (4, "4 tours / mois — toutes les semaines"),
 ]
 
 
@@ -142,23 +142,23 @@ class ServiceExecution(models.Model):
         return None
 
     def save(self, *args, **kwargs):
-        # Calcul automatique de next_due_date
         if not self.next_due_date:
             days = self.interval_days()
             if days:
-                self.next_due_date = self.execution_date + timedelta(days=days)
+                raw = self.execution_date + timedelta(days=days)
+                # Avance au prochain jour de semaine identique à execution_date
+                offset = (self.execution_date.weekday() - raw.weekday()) % 7
+                self.next_due_date = raw + timedelta(days=offset)
         super().save(*args, **kwargs)
 
     @property
     def is_overdue(self) -> bool:
-        """True si la prochaine intervention est dépassée et non complétée."""
         if not self.next_due_date or self.is_completed:
             return False
         return self.next_due_date < timezone.now().date()
 
     @property
     def days_until_due(self) -> int | None:
-        """Nombre de jours restants avant échéance (négatif si dépassé)."""
         if not self.next_due_date:
             return None
         return (self.next_due_date - timezone.now().date()).days
@@ -168,6 +168,10 @@ class ServiceExecution(models.Model):
         """Affichage lisible du rythme d'entretien."""
         if not self.tours_per_month:
             return self.service.renewal_delay_display
-        days = _TOURS_DELAY[self.tours_per_month]
-        labels = {1: "1 tour/mois", 2: "2 tours/mois", 3: "3 tours/mois", 4: "4 tours/mois"}
-        return f"{labels[self.tours_per_month]} — tous les {days} jours"
+        labels = {
+            1: "1 tour/mois — tous les 30 jours",
+            2: "2 tours/mois — toutes les 2 semaines",
+            3: "3 tours/mois — tous les 10 jours",
+            4: "4 tours/mois — toutes les semaines",
+        }
+        return labels[self.tours_per_month]

@@ -266,8 +266,13 @@ def sale_create(request):
                         if qty > 1 and tours_per_month:
                             from datetime import timedelta
                             interval = first_exec.interval_days() or 0
+                            prev_date = sale.sale_date
                             for i in range(1, qty):
-                                next_date = sale.sale_date + timedelta(days=interval * i)
+                                raw_date = prev_date + timedelta(days=interval)
+                                # Ajuste au même jour de semaine que le premier passage
+                                offset = (sale.sale_date.weekday() - raw_date.weekday()) % 7
+                                next_date = raw_date + timedelta(days=offset)
+                                prev_date = next_date
                                 ServiceExecution.objects.create(
                                     client=client,
                                     service=service_obj,

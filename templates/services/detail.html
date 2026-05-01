@@ -165,7 +165,7 @@
               <svg class="h-3 w-3 shrink-0 {% if member.is_completed %}text-green-500{% else %}text-gray-300{% endif %}" fill="currentColor" viewBox="0 0 8 8">
                 <circle cx="4" cy="4" r="4"/>
               </svg>
-              <span class="text-xs text-gray-600">{{ member.execution_date|date:"d/m/Y" }}</span>
+              <span class="text-xs text-gray-600">{% if member.next_due_date %}{{ member.next_due_date|date:"d/m/Y" }}{% else %}{{ member.execution_date|date:"d/m/Y" }}{% endif %}</span>
             </div>
             {% if member.is_completed %}
             <span class="badge-green text-xs shrink-0">Effectué</span>
@@ -192,7 +192,7 @@
           {% else %}
           <span class="text-sm font-medium text-gray-500 italic">Client anonyme</span>
           {% endif %}
-          <p class="text-xs text-gray-400 mt-0.5">{{ head.execution_date|date:"d/m/Y" }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">{% if head.next_due_date %}{{ head.next_due_date|date:"d/m/Y" }}{% else %}{{ head.execution_date|date:"d/m/Y" }}{% endif %}</p>
         </div>
         {% if head.sale_item %}
         <div class="shrink-0 text-right">
