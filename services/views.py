@@ -481,28 +481,45 @@ def execution_complete(request, pk):
 
         # Auto-planification du prochain tour pour les services récurrents
         if execution.next_due_date and execution.tours_per_month:
-            next_date = execution.next_due_date
-            already_exists = ServiceExecution.objects.filter(
-                client=execution.client,
-                service=execution.service,
-                execution_date=next_date,
-                is_completed=False,
-            ).exists()
-            if not already_exists:
+            interval = execution.interval_days() or 0
+
+            # Des tours futurs existent-ils déjà ? (enfants directs ou frères plus tardifs)
+            has_pending_future = (
+                execution.children.filter(is_completed=False).exists()
+                or (
+                    execution.parent_execution_id
+                    and ServiceExecution.objects.filter(
+                        parent_execution_id=execution.parent_execution_id,
+                        is_completed=False,
+                        execution_date__gt=execution.execution_date,
+                    ).exists()
+                )
+            )
+
+            if not has_pending_future and interval:
+                # Nouveau modèle : next_due_date == execution_date (today = date planifiée)
+                # Ancien modèle : next_due_date = execution_date + interval (prochaine échéance)
+                if execution.next_due_date == execution.execution_date:
+                    next_exec_date = execution.execution_date + timedelta(days=interval)
+                else:
+                    next_exec_date = execution.next_due_date
+
                 next_start_tour = None
                 if execution.start_tour and execution.tours_per_month:
                     next_start_tour = (execution.start_tour % execution.tours_per_month) + 1
+
                 ServiceExecution.objects.create(
                     client=execution.client,
                     service=execution.service,
                     tours_per_month=execution.tours_per_month,
-                    execution_date=next_date,
+                    execution_date=next_exec_date,
+                    next_due_date=next_exec_date,
                     start_tour=next_start_tour,
                 )
                 messages.success(
                     request,
                     f"Prestation « {execution.service.name} » pour {execution.client.name} effectuée. "
-                    f"Prochain passage planifié le {next_date.strftime('%d/%m/%Y')}."
+                    f"Prochain passage planifié le {next_exec_date.strftime('%d/%m/%Y')}."
                 )
             else:
                 messages.success(

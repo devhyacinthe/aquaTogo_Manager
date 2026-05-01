@@ -259,12 +259,13 @@ def sale_create(request):
                             unit_price=unit_price,
                             purchase_price_snapshot=Decimal("0.00"),
                         )
-                        # Premier passage — lié au SaleItem
+                        # Premier passage — lié au SaleItem, planifié AUJOURD'HUI
                         first_exec = ServiceExecution.objects.create(
                             client=client,
                             service=service_obj,
                             sale_item=sale_item,
                             execution_date=sale.sale_date,
+                            next_due_date=sale.sale_date,  # apparaît dans le calendrier aujourd'hui
                             tours_per_month=tours_per_month,
                             start_tour=start_tour,
                         )
@@ -276,14 +277,15 @@ def sale_create(request):
                             for i in range(1, exec_qty):
                                 raw_date = prev_date + timedelta(days=interval)
                                 offset = (sale.sale_date.weekday() - raw_date.weekday()) % 7
-                                next_date = raw_date + timedelta(days=offset)
-                                prev_date = next_date
+                                child_date = raw_date + timedelta(days=offset)
+                                prev_date = child_date
                                 child_tour = ((start_tour - 1 + i) % tours_per_month) + 1
                                 ServiceExecution.objects.create(
                                     client=client,
                                     service=service_obj,
                                     tours_per_month=tours_per_month,
-                                    execution_date=next_date,
+                                    execution_date=child_date,
+                                    next_due_date=child_date,  # apparaît dans le calendrier à sa propre date
                                     parent_execution=first_exec,
                                     start_tour=child_tour,
                                 )

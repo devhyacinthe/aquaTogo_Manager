@@ -65,11 +65,13 @@ class Client(models.Model):
     # ── Rappels de prestation ─────────────────────────────────────────────────
 
     def upcoming_service_executions(self, days: int = 30):
-        """Retourne les exécutions de service dues dans les N prochains jours."""
+        """Retourne les exécutions de service dues aujourd'hui ou dans les N prochains jours."""
         from django.utils import timezone
         from datetime import timedelta
-        limit = timezone.now().date() + timedelta(days=days)
+        today = timezone.now().date()
+        limit = today + timedelta(days=days)
         return self.service_executions.filter(
             is_completed=False,
+            next_due_date__gte=today,
             next_due_date__lte=limit,
         ).select_related("service").order_by("next_due_date")
