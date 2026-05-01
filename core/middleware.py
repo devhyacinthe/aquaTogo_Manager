@@ -1,21 +1,34 @@
 from django.shortcuts import redirect
 from django.urls import reverse
 
-
-# URL prefixes an employee is allowed to access
+# Préfixes autorisés pour un employé
 _EMPLOYE_ALLOWED_PREFIXES = (
+    "/ventes/",
+    "/produits/",
+    "/clients/",
     "/prestations/",
     "/profil/",
     "/login/",
     "/logout/",
     "/static/",
     "/media/",
-    "/admin/",  # keep admin accessible (Django will handle its own permission checks)
+    "/admin/",
+)
+
+# Actions produit interdites aux employés (modification de stock / catalogue)
+_EMPLOYE_BLOCKED_SUFFIXES = (
+    "/stock/",
+    "/supprimer/",
+    "/modifier/",
+    "/desarchiver/",
+    "archives/",
+    "/categories/",
+    "nouveau/",
 )
 
 
 class RoleAccessMiddleware:
-    """Restrict employees to services/execution pages only."""
+    """Restreint les employés aux sections autorisées."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -25,7 +38,15 @@ class RoleAccessMiddleware:
             profile = getattr(request.user, "profile", None)
             if profile and profile.is_employe:
                 path = request.path
-                allowed = any(path.startswith(p) for p in _EMPLOYE_ALLOWED_PREFIXES)
-                if not allowed:
-                    return redirect(reverse("services:execution_list"))
+
+                # Vérifier les préfixes autorisés
+                if not any(path.startswith(p) for p in _EMPLOYE_ALLOWED_PREFIXES):
+                    return redirect(reverse("sales:list"))
+
+                # Bloquer les actions de modification de stock/catalogue produits
+                if path.startswith("/produits/") and any(
+                    path.endswith(s) or s in path for s in _EMPLOYE_BLOCKED_SUFFIXES
+                ):
+                    return redirect(reverse("products:list"))
+
         return self.get_response(request)

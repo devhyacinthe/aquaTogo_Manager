@@ -67,9 +67,11 @@ def service_detail(request, pk):
     service = get_object_or_404(Service, pk=pk)
 
     # Récupère les exécutions « têtes de groupe » (sans parent) + leurs enfants
+    # Exclut les exécutions liées à une vente annulée
     head_execs = list(
         ServiceExecution.objects
         .filter(service=service, parent_execution__isnull=True)
+        .exclude(sale_item__sale__status="canceled")
         .select_related("client", "sale_item__sale")
         .prefetch_related(
             Prefetch(

@@ -5,6 +5,22 @@
 {% block content %}
 <div class="max-w-2xl mx-auto space-y-4">
 
+  {# ── Bandeau vente annulée ──────────────────────────────────────────────── #}
+  {% if sale.status == 'canceled' %}
+  <div class="rounded-xl bg-red-50 border border-red-200 px-4 py-3 flex items-start gap-3">
+    <svg class="h-5 w-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+    </svg>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-semibold text-red-700">Vente annulée</p>
+      <p class="text-xs text-red-500 mt-0.5">{{ sale.canceled_at|date:"d/m/Y à H:i" }} par {{ sale.canceled_by.get_full_name|default:sale.canceled_by.username }}</p>
+      {% if sale.cancellation_reason %}
+      <p class="text-xs text-red-600 mt-1 italic">« {{ sale.cancellation_reason }} »</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {# ── En-tête ────────────────────────────────────────────────────────────── #}
   <div class="flex items-start gap-3">
     <a href="{% url 'sales:list' %}"
@@ -15,8 +31,10 @@
     </a>
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
-        <h1 class="text-xl font-bold text-gray-900">Vente #{{ sale.pk }}</h1>
-        {% if sale.payment_status == 'paid' %}
+        <h1 class="text-xl font-bold {% if sale.status == 'canceled' %}text-gray-400 line-through{% else %}text-gray-900{% endif %}">Vente #{{ sale.pk }}</h1>
+        {% if sale.status == 'canceled' %}
+          <span class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">Annulée</span>
+        {% elif sale.payment_status == 'paid' %}
           <span class="badge-green">Payé</span>
         {% elif sale.payment_status == 'partial' %}
           <span class="badge-yellow">Partiel</span>
@@ -119,7 +137,7 @@
   </div>
 
   {# ── Ajouter un paiement ────────────────────────────────────────────────── #}
-  {% if sale.remaining_balance > 0 %}
+  {% if sale.remaining_balance > 0 and sale.status != 'canceled' %}
   <div class="card p-4" x-data="{ open: false, amount: '{{ sale.remaining_balance|floatformat:0 }}', method: 'cash', loading: false }">
 
     <button type="button" @click="open = !open"
@@ -194,8 +212,32 @@
   </div>
   {% endif %}
 
-  {# ── Partager sur WhatsApp ───────────────────────────────────────────────── #}
-  <div class="card p-4" x-data="{ copied: false }">
+  {# ── Partager avec le client ────────────────────────────────────────────── #}
+  {% if sale.status != 'canceled' %}
+  <div class="card p-4"
+       x-data="{
+         copied: false,
+         sharing: false,
+         step: '',
+         sendInvoice() {
+           this.sharing = true;
+           this.step = 'download';
+
+           // 1. Ouvre WhatsApp immédiatement (doit être synchrone pour éviter le blocage popup)
+           window.open('{{ whatsapp_client_url|default:whatsapp_url }}', '_blank');
+
+           // 2. Télécharge le PDF
+           const a = document.createElement('a');
+           a.href = '{% url "sales:invoice_pdf" sale.pk %}';
+           a.download = 'Facture_AquaTogo_{{ sale.pk|stringformat:"04d" }}.pdf';
+           document.body.appendChild(a);
+           a.click();
+           document.body.removeChild(a);
+
+           this.step = 'whatsapp';
+           setTimeout(() => { this.sharing = false; this.step = ''; }, 2000);
+         }
+       }">
 
     <h2 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
       <svg class="h-4 w-4 text-green-600" fill="currentColor" viewBox="0 0 24 24">
@@ -206,7 +248,7 @@
 
     <div class="flex gap-2 flex-wrap">
 
-      {# Bouton copier — texte pré-construit côté serveur #}
+      {# Bouton copier le texte #}
       <button type="button"
               @click="navigator.clipboard.writeText('{{ whatsapp_text|escapejs }}').then(() => { copied = true; setTimeout(() => copied = false, 2500) })"
               class="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors">
@@ -223,36 +265,72 @@
         <span x-text="copied ? 'Copié !' : 'Copier le récapitulatif'"></span>
       </button>
 
-
-      {# Bouton WhatsApp — toujours visible, lien pré-rempli avec le message #}
-      <a href="{{ whatsapp_url }}" target="_blank" rel="noopener"
-         style="display:inline-flex;align-items:center;gap:8px;padding:10px 16px;background:#22c55e;color:#fff;font-size:0.875rem;font-weight:500;border-radius:12px;text-decoration:none;"
-         onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">
-        <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+      {# Bouton WhatsApp — télécharge le PDF + ouvre WhatsApp au numéro du client #}
+      <a href="#"
+         @click.prevent="sendInvoice()"
+         :style="`display:inline-flex;align-items:center;gap:8px;padding:10px 16px;background:${sharing?'#16a34a':'#22c55e'};color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;border-radius:12px;border:2px solid #16a34a;line-height:1.25;transition:background .15s;${sharing?'opacity:0.7;pointer-events:none;cursor:wait':'cursor:pointer'}`">
+        <svg style="width:16px;height:16px;flex-shrink:0;display:block" fill="#ffffff" viewBox="0 0 24 24">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
         </svg>
-        Envoyer sur WhatsApp
+        <span x-text="step === 'download' ? 'Téléchargement…' : step === 'whatsapp' ? 'Ouverture WhatsApp…' : 'Envoyer la facture PDF'"></span>
       </a>
+
+      {# Instruction après clic #}
+      <p x-show="step === 'whatsapp'" x-transition
+         style="width:100%;margin-top:8px;font-size:12px;color:#16a34a;display:flex;align-items:center;gap:6px;">
+        <svg style="width:14px;height:14px;flex-shrink:0" fill="none" stroke="#16a34a" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"/>
+        </svg>
+        WhatsApp est ouvert — appuyez sur 📎 pour joindre la facture téléchargée.
+      </p>
 
     </div>
   </div>
+  {% endif %}{# /sale.status != 'canceled' — WhatsApp #}
 
   {# ── Actions ────────────────────────────────────────────────────────────── #}
-  <div class="flex gap-2 pb-4">
-    <a href="{% url 'sales:invoice_pdf' sale.pk %}"
-       class="btn-primary flex items-center gap-2 flex-1 justify-center py-3">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round"
-          d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
-      </svg>
-      Télécharger la facture
-    </a>
-    <a href="{% url 'sales:list' %}" class="btn-secondary flex items-center gap-2 flex-1 justify-center">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
-      </svg>
-      Toutes les ventes
-    </a>
+  <div class="space-y-2 pb-4">
+    <div class="flex gap-2">
+      {% if sale.status != 'canceled' %}
+      <a href="{% url 'sales:invoice_pdf' sale.pk %}"
+         class="btn-primary flex items-center gap-2 flex-1 justify-center py-3">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
+        </svg>
+        Télécharger la facture
+      </a>
+      {% endif %}
+      <a href="{% url 'sales:list' %}" class="btn-secondary flex items-center gap-2 flex-1 justify-center">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
+        </svg>
+        Toutes les ventes
+      </a>
+    </div>
+
+    {% if sale.can_modify or sale.can_cancel %}
+    <div class="flex gap-2">
+      {% if sale.can_modify %}
+      <a href="{% url 'sales:modify' sale.pk %}"
+         class="flex items-center justify-center gap-2 flex-1 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125"/>
+        </svg>
+        Modifier
+      </a>
+      {% endif %}
+      {% if sale.can_cancel %}
+      <a href="{% url 'sales:cancel' sale.pk %}"
+         class="flex items-center justify-center gap-2 flex-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+        </svg>
+        Annuler la vente
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
 </div>

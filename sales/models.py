@@ -1,14 +1,22 @@
-from django.db import models
+from datetime import timedelta
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
+from django.db import models, transaction
 from django.db.models import Sum
+from django.utils import timezone
 from decimal import Decimal
 
 User = get_user_model()
 
 
 class Sale(models.Model):
+
+    class SaleStatus(models.TextChoices):
+        ACTIVE = "active", "Active"
+        CANCELED = "canceled", "Annulée"
 
     class PaymentStatus(models.TextChoices):
         UNPAID = "unpaid", "Non payé"
@@ -43,6 +51,21 @@ class Sale(models.Model):
         choices=PaymentStatus.choices,
         default=PaymentStatus.UNPAID,
     )
+    status = models.CharField(
+        max_length=10,
+        choices=SaleStatus.choices,
+        default=SaleStatus.ACTIVE,
+        db_index=True,
+    )
+    canceled_at = models.DateTimeField(null=True, blank=True)
+    canceled_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="canceled_sales",
+    )
+    cancellation_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -85,7 +108,6 @@ class Sale(models.Model):
         self.save(update_fields=["payment_status"])
 
     def recompute_totals(self) -> None:
-        """Recalcule total_amount et total_profit depuis les SaleItems."""
         aggregates = self.items.aggregate(
             amount=Sum("line_total"),
             profit=Sum("line_profit"),
@@ -93,6 +115,49 @@ class Sale(models.Model):
         self.total_amount = aggregates["amount"] or Decimal("0.00")
         self.total_profit = aggregates["profit"] or Decimal("0.00")
         self.save(update_fields=["total_amount", "total_profit"])
+
+    # ── Annulation / Modification ─────────────────────────────────────────────
+
+    @property
+    def can_cancel(self) -> bool:
+        if self.status != self.SaleStatus.ACTIVE:
+            return False
+        delay_hours = getattr(settings, "SALE_CANCEL_DELAY_HOURS", 48)
+        return timezone.now() <= self.created_at + timedelta(hours=delay_hours)
+
+    @property
+    def can_modify(self) -> bool:
+        if self.status != self.SaleStatus.ACTIVE:
+            return False
+        delay_hours = getattr(settings, "SALE_MODIFY_DELAY_HOURS", 24)
+        return timezone.now() <= self.created_at + timedelta(hours=delay_hours)
+
+    def cancel(self, user, reason: str = "") -> None:
+        if not self.can_cancel:
+            raise ValueError("Cette vente ne peut plus être annulée (délai dépassé ou déjà annulée).")
+        with transaction.atomic():
+            from services.models import ServiceExecution
+            for item in self.items.select_related("product").all():
+                if item.product:
+                    item.product.increase_stock(item.quantity)
+                # Supprimer l'exécution de prestation liée (et ses enfants)
+                try:
+                    exec_obj = item.service_execution
+                    if exec_obj:
+                        exec_obj.children.all().delete()
+                        exec_obj.delete()
+                except ServiceExecution.DoesNotExist:
+                    pass
+            self.payments.all().delete()
+            self.status = self.SaleStatus.CANCELED
+            self.canceled_at = timezone.now()
+            self.canceled_by = user
+            self.cancellation_reason = reason
+            self.payment_status = self.PaymentStatus.UNPAID
+            self.save(update_fields=[
+                "status", "canceled_at", "canceled_by",
+                "cancellation_reason", "payment_status",
+            ])
 
 
 class SaleItem(models.Model):
@@ -213,5 +278,20 @@ class Payment(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # Mise à jour automatique du statut de la vente après chaque paiement
         self.sale.update_payment_status()
+
+
+class SaleModificationLog(models.Model):
+    sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name="modification_logs")
+    modified_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="sale_modifications")
+    modified_at = models.DateTimeField(auto_now_add=True)
+    reason = models.TextField()
+    snapshot_before = models.JSONField()
+
+    class Meta:
+        verbose_name = "Historique de modification"
+        verbose_name_plural = "Historiques de modifications"
+        ordering = ["-modified_at"]
+
+    def __str__(self):
+        return f"Modif Vente #{self.sale_id} par {self.modified_by} le {self.modified_at:%d/%m/%Y %H:%M}"

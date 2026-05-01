@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Annuler la vente #{{ sale.pk }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-4">
+
+  <div class="flex items-center gap-3">
+    <a href="{% url 'sales:detail' sale.pk %}"
+       class="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors shadow-sm shrink-0">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <h1 class="text-xl font-bold text-gray-900">Annuler la vente #{{ sale.pk }}</h1>
+  </div>
+
+  {# Avertissement #}
+  <div class="rounded-xl bg-red-50 border border-red-200 p-4 space-y-2">
+    <div class="flex items-center gap-2">
+      <svg class="h-5 w-5 text-red-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+      </svg>
+      <p class="text-sm font-semibold text-red-700">Cette action est irréversible</p>
+    </div>
+    <ul class="text-xs text-red-600 space-y-1 ml-7 list-disc">
+      <li>Le stock des produits sera restauré automatiquement</li>
+      <li>Tous les paiements enregistrés seront supprimés</li>
+      <li>La vente restera visible dans l'historique avec le statut "Annulée"</li>
+    </ul>
+  </div>
+
+  {# Résumé de la vente #}
+  <div class="card p-4 space-y-2">
+    <h2 class="text-sm font-semibold text-gray-700">Résumé de la vente</h2>
+    <div class="text-sm text-gray-600 space-y-1">
+      <div class="flex justify-between">
+        <span class="text-gray-400">Client</span>
+        <span class="font-medium">{{ sale.client.name|default:"Anonyme" }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-gray-400">Date</span>
+        <span class="font-medium">{{ sale.sale_date|date:"d/m/Y" }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-gray-400">Montant</span>
+        <span class="font-semibold text-gray-900">{{ sale.total_amount|floatformat:0 }} FCFA</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-gray-400">Payé</span>
+        <span class="font-medium text-green-600">{{ sale.total_paid|floatformat:0 }} FCFA</span>
+      </div>
+    </div>
+    <div class="border-t border-gray-100 pt-2 space-y-1">
+      {% for item in sale.items.all %}
+      <div class="flex justify-between text-xs text-gray-500">
+        <span>{% if item.product %}{{ item.product.name }}{% elif item.service %}{{ item.service.name }}{% else %}Article{% endif %} × {{ item.quantity }}</span>
+        <span>{{ item.line_total|floatformat:0 }} FCFA</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# Formulaire #}
+  <form method="post" class="card p-4 space-y-4">
+    {% csrf_token %}
+
+    {% if error %}
+    <p class="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{{ error }}</p>
+    {% endif %}
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1.5">
+        Raison de l'annulation <span class="text-red-500">*</span>
+      </label>
+      <textarea name="reason"
+                rows="3"
+                required
+                placeholder="Ex : erreur de saisie, client a changé d'avis…"
+                class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-red-400 focus:ring-2 focus:ring-red-100 focus:outline-none transition-colors resize-none"></textarea>
+    </div>
+
+    <div class="flex gap-2 pt-1">
+      <a href="{% url 'sales:detail' sale.pk %}"
+         class="flex-1 flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+        Annuler
+      </a>
+      <button type="submit"
+              class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 active:bg-red-800 transition-colors">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+        </svg>
+        Confirmer l'annulation
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

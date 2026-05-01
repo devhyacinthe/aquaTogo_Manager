@@ -36,7 +36,7 @@
   </div>
 
   {# ── Filtres période ────────────────────────────────────────────────────── #}
-  <div class="flex gap-2">
+  <div class="flex gap-2 flex-wrap">
     <a href="?periode=today"
        class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors
               {% if period == 'today' %}bg-brand-600 text-white shadow-sm{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
@@ -51,6 +51,11 @@
        class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors
               {% if period == 'month' %}bg-brand-600 text-white shadow-sm{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
       Ce mois
+    </a>
+    <a href="?periode=all"
+       class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors
+              {% if period == 'all' %}bg-brand-600 text-white shadow-sm{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+      Tout voir
     </a>
   </div>
 
@@ -177,7 +182,7 @@
   <div class="space-y-2">
     {% for sale in sales %}
     <a href="{% url 'sales:detail' sale.pk %}"
-       class="card flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition-colors active:bg-gray-100">
+       class="card flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition-colors active:bg-gray-100 {% if sale.status == 'canceled' %}opacity-60{% endif %}">
 
       {# Gauche : infos principale #}
       <div class="min-w-0 flex-1">
@@ -195,8 +200,12 @@
 
       {# Droite : montant + statut #}
       <div class="shrink-0 text-right flex flex-col items-end gap-1">
-        <p class="font-bold text-gray-900">{{ sale.total_amount|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span></p>
-        {% if sale.payment_status == 'paid' %}
+        <p class="font-bold {% if sale.status == 'canceled' %}text-gray-400 line-through{% else %}text-gray-900{% endif %}">
+          {{ sale.total_amount|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span>
+        </p>
+        {% if sale.status == 'canceled' %}
+          <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">Annulée</span>
+        {% elif sale.payment_status == 'paid' %}
           <span class="badge-green">Payé</span>
         {% elif sale.payment_status == 'partial' %}
           <span class="badge-yellow">Partiel</span>
@@ -212,6 +221,43 @@
     </a>
     {% endfor %}
   </div>
+
+  {# ── Pagination ─────────────────────────────────────────────────────────── #}
+  {% if page_obj.has_other_pages %}
+  <div class="flex items-center justify-center gap-1 pt-2 pb-4">
+    {% if page_obj.has_previous %}
+    <a href="?periode={{ period }}&page={{ page_obj.previous_page_number }}"
+       class="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+      <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-sm font-semibold text-white">{{ num }}</span>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+      <a href="?periode={{ period }}&page={{ num }}"
+         class="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-sm text-gray-600 hover:bg-gray-50 transition-colors">{{ num }}</a>
+      {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <a href="?periode={{ period }}&page={{ page_obj.next_page_number }}"
+       class="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+      </svg>
+    </a>
+    {% endif %}
+
+    <span class="ml-2 text-xs text-gray-400">
+      Page {{ page_obj.number }}/{{ page_obj.paginator.num_pages }}
+      · {{ page_obj.paginator.count }} vente{{ page_obj.paginator.count|pluralize }}
+    </span>
+  </div>
+  {% endif %}
 
   {% else %}
   {# ── État vide ──────────────────────────────────────────────────────────── #}

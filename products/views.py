@@ -137,8 +137,33 @@ def product_delete(request, pk):
     name = product.name
     product.is_active = False
     product.save(update_fields=["is_active"])
-    messages.success(request, f"Produit \u00ab\u00a0{name}\u00a0\u00bb archiv\u00e9 avec succ\u00e8s.")
+    messages.success(request, f"Produit \u00ab {name} \u00bb archiv\u00e9 avec succ\u00e8s.")
     return redirect("products:list")
+
+
+@login_required
+def product_archived(request):
+    if not request.user.is_staff:
+        raise PermissionDenied
+    products = (
+        Product.objects.filter(is_active=False)
+        .select_related("category")
+        .order_by("category__name", "name")
+    )
+    return render(request, "products/archived.html", {"products": products})
+
+
+@login_required
+def product_unarchive(request, pk):
+    if not request.user.is_staff:
+        raise PermissionDenied
+    if request.method != "POST":
+        return redirect("products:archived")
+    product = get_object_or_404(Product, pk=pk, is_active=False)
+    product.is_active = True
+    product.save(update_fields=["is_active"])
+    messages.success(request, f"Produit \u00ab {product.name} \u00bb remis en vente.")
+    return redirect("products:archived")
 
 
 @login_required

@@ -5,7 +5,9 @@ import urllib.parse
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Case, DecimalField, ExpressionWrapper, F, Sum, Value, When
 from django.db.models.functions import Coalesce
@@ -17,7 +19,7 @@ from clients.models import Client
 from products.models import Product
 from services.models import Service
 
-from .models import Payment, Sale, SaleItem
+from .models import Payment, Sale, SaleItem, SaleModificationLog
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -35,6 +37,7 @@ def _parse_decimal(value, default=Decimal("0.00")):
 def sale_list(request):
     periode = request.GET.get("periode", "today")
     today = date.today()
+    start = end = None
 
     if periode == "week":
         start = today - timedelta(days=today.weekday())
@@ -42,26 +45,43 @@ def sale_list(request):
     elif periode == "month":
         start = today.replace(day=1)
         end = today
+    elif periode == "all":
+        pass  # pas de filtre date
     else:
         periode = "today"
         start = today
         end = today
 
-    sales = (
-        Sale.objects.filter(sale_date__gte=start, sale_date__lte=end)
-        .select_related("client", "created_by")
-        .prefetch_related("items")
-    )
+    base_qs = Sale.objects.select_related("client", "created_by").prefetch_related("items")
+    if start is not None:
+        base_qs = base_qs.filter(sale_date__gte=start, sale_date__lte=end)
 
-    aggregates = sales.aggregate(
+    # Pagination (25 par page)
+    paginator = Paginator(base_qs, 25)
+    page = paginator.get_page(request.GET.get("page", 1))
+    sales = page  # objet Page → itérable + métadonnées de pagination
+
+    # Agrégats financiers : uniquement ventes actives sur la période
+    active_filter = {"status": Sale.SaleStatus.ACTIVE}
+    if start is not None:
+        active_filter["sale_date__gte"] = start
+        active_filter["sale_date__lte"] = end
+    active_sales = Sale.objects.filter(**active_filter)
+
+    aggregates = active_sales.aggregate(
         total_ca=Sum("total_amount"),
         total_profit=Sum("total_profit"),
     )
     total_ca = aggregates["total_ca"] or Decimal("0.00")
     total_profit = aggregates["total_profit"] or Decimal("0.00")
 
-    # Répartition produits / prestations sur la même période
-    items_qs = SaleItem.objects.filter(sale__sale_date__gte=start, sale__sale_date__lte=end)
+    # Répartition produits / prestations (ventes actives seulement)
+    items_filter = {"sale__status": Sale.SaleStatus.ACTIVE}
+    if start is not None:
+        items_filter["sale__sale_date__gte"] = start
+        items_filter["sale__sale_date__lte"] = end
+    items_qs = SaleItem.objects.filter(**items_filter)
+
     prod_agg = items_qs.filter(product__isnull=False).aggregate(
         ca=Sum("line_total"), profit=Sum("line_profit")
     )
@@ -73,7 +93,7 @@ def sale_list(request):
     rev_services = svc_agg["ca"] or Decimal("0.00")
     profit_services = svc_agg["profit"] or Decimal("0.00")
 
-    # Répartition par catégorie de produit (dynamique)
+    # Répartition par catégorie
     from products.models import ProductCategory
     cat_breakdown = []
     for cat in ProductCategory.objects.order_by("name"):
@@ -87,12 +107,14 @@ def sale_list(request):
             "profit": agg["profit"] or Decimal("0.00"),
         })
 
-    # CA & bénéfice réellement encaissés (basé sur les paiements de la période)
+    # Encaissements réels
     _zero = Value(Decimal("0.00"))
     _df = DecimalField(max_digits=14, decimal_places=2)
-    payments_qs = Payment.objects.filter(
-        payment_date__gte=start, payment_date__lte=end
-    ).annotate(
+    pay_filter = {}
+    if start is not None:
+        pay_filter["payment_date__gte"] = start
+        pay_filter["payment_date__lte"] = end
+    payments_qs = Payment.objects.filter(**pay_filter).annotate(
         prop_profit=Case(
             When(
                 sale__total_amount__gt=0,
@@ -114,6 +136,7 @@ def sale_list(request):
 
     return render(request, "sales/list.html", {
         "sales": sales,
+        "page_obj": page,
         "period": periode,
         "today": today,
         "total_ca": total_ca,
@@ -307,6 +330,7 @@ def sale_detail(request, pk):
     encoded_text = urllib.parse.quote(whatsapp_text)
 
     whatsapp_url = f"https://api.whatsapp.com/send?text={encoded_text}"
+    whatsapp_client_url = None  # URL directe avec le numéro du client
     if sale.client and sale.client.phone:
         phone = re.sub(r"\D", "", sale.client.phone)
         if phone.startswith("00"):
@@ -315,10 +339,12 @@ def sale_detail(request, pk):
             phone = "228" + phone[1:]
         if phone:
             whatsapp_url = f"https://wa.me/{phone}?text={encoded_text}"
+            whatsapp_client_url = f"https://wa.me/{phone}?text={urllib.parse.quote('Bonjour, veuillez trouver ci-joint votre facture AquaTogo n°' + str(sale.pk).zfill(4) + '.')}"
 
     return render(request, "sales/detail.html", {
         "sale": sale,
         "whatsapp_url": whatsapp_url,
+        "whatsapp_client_url": whatsapp_client_url,
         "whatsapp_text": whatsapp_text,
     })
 
@@ -370,6 +396,193 @@ def sale_add_payment(request, pk):
         )
 
     return redirect("sales:detail", pk=pk)
+
+
+# ── sale_cancel ───────────────────────────────────────────────────────────────
+
+@login_required
+def sale_cancel(request, pk):
+    sale = get_object_or_404(
+        Sale.objects.select_related("client", "created_by").prefetch_related("items__product"),
+        pk=pk,
+    )
+    if not sale.can_cancel:
+        messages.error(request, "Cette vente ne peut plus être annulée.")
+        return redirect("sales:detail", pk=pk)
+
+    if request.method == "POST":
+        reason = request.POST.get("reason", "").strip()
+        if not reason:
+            return render(request, "sales/cancel.html", {
+                "sale": sale,
+                "error": "La raison est obligatoire.",
+            })
+        try:
+            sale.cancel(request.user, reason)
+            messages.success(request, f"Vente #{pk} annulée. Le stock a été restauré.")
+        except ValueError as e:
+            messages.error(request, str(e))
+        return redirect("sales:detail", pk=pk)
+
+    return render(request, "sales/cancel.html", {"sale": sale})
+
+
+# ── sale_modify ───────────────────────────────────────────────────────────────
+
+@login_required
+def sale_modify(request, pk):
+    sale = get_object_or_404(
+        Sale.objects.select_related("client", "created_by")
+        .prefetch_related("items__product", "items__service"),
+        pk=pk,
+    )
+    if not sale.can_modify:
+        messages.error(request, "Cette vente ne peut plus être modifiée.")
+        return redirect("sales:detail", pk=pk)
+
+    clients = Client.objects.filter(is_active=True).order_by("name")
+    products_qs = Product.objects.filter(is_active=True).select_related("category").order_by("name")
+    services_qs = Service.objects.filter(is_active=True).order_by("name")
+    products_data = [
+        {"id": p.id, "name": p.name, "selling_price": str(p.selling_price),
+         "purchase_price": str(p.purchase_price), "stock_quantity": p.stock_quantity}
+        for p in products_qs
+    ]
+    services_data = [
+        {"id": s.id, "name": s.name, "price": str(s.price)}
+        for s in services_qs
+    ]
+
+    ctx_base = {"sale": sale, "clients": clients,
+                "products_data": products_data, "services_data": services_data}
+
+    if request.method == "POST":
+        reason = request.POST.get("reason", "").strip()
+        if not reason:
+            return render(request, "sales/modify.html", {
+                **ctx_base, "error": "La raison de modification est obligatoire.",
+            })
+
+        new_client_id = request.POST.get("client_id", "").strip()
+        new_sale_date = request.POST.get("sale_date", "").strip()
+
+        try:
+            with transaction.atomic():
+                # Snapshot avant modification
+                snapshot = {
+                    "client": sale.client.name if sale.client else None,
+                    "sale_date": str(sale.sale_date),
+                    "total_amount": str(sale.total_amount),
+                    "items": [
+                        {
+                            "id": item.pk,
+                            "label": str(item),
+                            "quantity": item.quantity,
+                            "unit_price": str(item.unit_price),
+                            "line_total": str(item.line_total),
+                        }
+                        for item in sale.items.all()
+                    ],
+                }
+
+                # Suppressions d'articles
+                delete_ids = set(request.POST.getlist("delete_items"))
+                for item in sale.items.select_related("product").filter(pk__in=delete_ids):
+                    if item.product:
+                        item.product.increase_stock(item.quantity)
+                    item.delete()
+
+                # Mise à jour quantités / prix
+                for item in sale.items.select_related("product").all():
+                    new_qty_raw = request.POST.get(f"item_{item.pk}_quantity", "").strip()
+                    new_price_raw = request.POST.get(f"item_{item.pk}_unit_price", "").strip()
+                    changed = False
+
+                    if new_qty_raw:
+                        new_qty = max(1, int(new_qty_raw))
+                        if new_qty != item.quantity:
+                            if item.product:
+                                diff = item.quantity - new_qty
+                                if diff > 0:
+                                    item.product.increase_stock(diff)
+                                else:
+                                    item.product.decrease_stock(-diff)
+                            item.quantity = new_qty
+                            changed = True
+
+                    if new_price_raw:
+                        new_price = _parse_decimal(new_price_raw)
+                        if new_price > Decimal("0") and new_price != item.unit_price:
+                            item.unit_price = new_price
+                            changed = True
+
+                    if changed:
+                        item.save()
+
+                # Mise à jour client
+                if new_client_id:
+                    try:
+                        sale.client = Client.objects.get(pk=int(new_client_id), is_active=True)
+                    except (Client.DoesNotExist, ValueError):
+                        pass
+                else:
+                    sale.client = None
+
+                # Mise à jour date
+                if new_sale_date:
+                    try:
+                        from datetime import date as date_type
+                        y, m, d = new_sale_date.split("-")
+                        sale.sale_date = date_type(int(y), int(m), int(d))
+                    except (ValueError, AttributeError):
+                        pass
+
+                sale.save(update_fields=["client", "sale_date"])
+
+                # Nouveaux articles
+                new_count = int(request.POST.get("new_items_count", 0) or 0)
+                for i in range(new_count):
+                    n_type = request.POST.get(f"new_type_{i}", "").strip()
+                    n_id_raw = request.POST.get(f"new_id_{i}", "").strip()
+                    n_qty_raw = request.POST.get(f"new_qty_{i}", "1").strip()
+                    n_price_raw = request.POST.get(f"new_price_{i}", "").strip()
+                    if not n_type or not n_id_raw or not n_price_raw:
+                        continue
+                    n_id = int(n_id_raw)
+                    n_qty = max(1, int(n_qty_raw or 1))
+                    n_price = _parse_decimal(n_price_raw)
+                    if n_price <= Decimal("0"):
+                        continue
+                    if n_type == "product":
+                        prod = Product.objects.select_for_update().get(pk=n_id, is_active=True)
+                        SaleItem.objects.create(
+                            sale=sale, product=prod, quantity=n_qty,
+                            unit_price=n_price, purchase_price_snapshot=prod.purchase_price,
+                        )
+                    elif n_type == "service":
+                        svc = Service.objects.get(pk=n_id, is_active=True)
+                        SaleItem.objects.create(
+                            sale=sale, service=svc, quantity=n_qty,
+                            unit_price=n_price, purchase_price_snapshot=Decimal("0.00"),
+                        )
+
+                sale.recompute_totals()
+                sale.update_payment_status()
+
+                SaleModificationLog.objects.create(
+                    sale=sale,
+                    modified_by=request.user,
+                    reason=reason,
+                    snapshot_before=snapshot,
+                )
+
+        except Exception as e:
+            return render(request, "sales/modify.html", {**ctx_base, "error": str(e)})
+
+        messages.success(request, f"Vente #{pk} modifiée avec succès.")
+        return redirect("sales:detail", pk=pk)
+
+    return render(request, "sales/modify.html", ctx_base)
 
 
 # ── API views ─────────────────────────────────────────────────────────────────
@@ -717,16 +930,24 @@ def sale_invoice_pdf(request, pk):
 
     if sale.payment_status == "paid":
         def _draw_paid_stamp(canvas, doc):
+            # Police 62pt : cap-height ≈ 45pt, baseline → top ≈ 45pt
+            # Rect height=72 → top at 36, center at 0
+            # baseline = center − cap_height/2 = 0 − 22 = −22 → top = -22+45 = 23 < 36 ✓
             canvas.saveState()
-            canvas.setFillColor(colors.Color(0.086, 0.639, 0.290, alpha=0.22))
-            canvas.setStrokeColor(colors.Color(0.086, 0.639, 0.290, alpha=0.35))
-            canvas.setLineWidth(3)
-            canvas.setFont("Helvetica-Bold", 72)
+            canvas.setFillAlpha(0.30)
+            canvas.setStrokeAlpha(0.30)
+            stamp_green = colors.HexColor("#15803D")
+            canvas.setFillColor(stamp_green)
+            canvas.setStrokeColor(stamp_green)
+            canvas.setLineWidth(5)
+            canvas.setFont("Helvetica-Bold", 62)
             w, h = A4
             canvas.translate(w / 2, h / 2)
             canvas.rotate(42)
-            canvas.roundRect(-110, -28, 220, 70, 8, fill=0, stroke=1)
-            canvas.drawCentredString(0, 8, "PAYÉ")
+            # Rect centré verticalement sur 0 : de -36 à +36 (height=72)
+            canvas.roundRect(-108, -36, 216, 72, 10, fill=0, stroke=1)
+            # Baseline à -22 : cap top ≈ -22+45=23, bien dans le rect
+            canvas.drawCentredString(0, -22, "PAYÉ")
             canvas.restoreState()
         doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)
     else:

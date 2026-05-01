@@ -130,3 +130,6 @@ LOGOUT_REDIRECT_URL = "core:login"
 
 TELEGRAM_BOT_TOKEN = config("TELEGRAM_BOT_TOKEN", default="")
 TELEGRAM_CHAT_ID = config("TELEGRAM_CHAT_ID", default="")
+
+SALE_CANCEL_DELAY_HOURS = config("SALE_CANCEL_DELAY_HOURS", default=48, cast=int)
+SALE_MODIFY_DELAY_HOURS = config("SALE_MODIFY_DELAY_HOURS", default=24, cast=int)

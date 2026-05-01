@@ -100,6 +100,7 @@
 </div>
 
 <!-- Ajustement de stock -->
+{% if user_role != 'employe' %}
 <div class="card mb-4"
      x-data="{ action: 'add', qty: 1, loading: false, showConfirm: false, purchasePrice: parseFloat('{{ product.purchase_price }}'.replace(',', '.')) }">
   <h2 class="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -231,6 +232,7 @@
     </div>
   </div>
 </div>
+{% endif %}{# /user_role != employe — ajustement stock #}
 
 <!-- Historique des ventes -->
 <div class="card mb-4">
