@@ -205,6 +205,20 @@ def client_settle_debt(request, pk):
 
 
 @login_required
+@require_POST
+def client_delete(request, pk):
+    if not request.user.is_staff:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+    client = get_object_or_404(Client, pk=pk)
+    name = client.name
+    client.is_active = False
+    client.save(update_fields=["is_active"])
+    messages.success(request, f"Client « {name} » supprimé.")
+    return redirect("clients:list")
+
+
+@login_required
 def client_edit(request, pk):
     client = get_object_or_404(Client, pk=pk)
 
