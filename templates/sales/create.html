@@ -196,17 +196,14 @@
                     <span style="font-size:0.65rem;font-weight:600;color:#7c3aed;background:#ede9fe;border-radius:9999px;padding:1px 7px;">Prestation</span>
                   </div>
                   <p class="text-xs text-gray-400 mt-0.5">
-                    <template x-if="item.qty > 1">
-                      <span>Tours <span x-text="item.start_tour"></span>→<span x-text="((item.start_tour - 1 + item.qty - 1) % (item.tours_per_month || item.qty)) + 1"></span> · <span x-text="item.qty"></span>×<span x-text="fmt(item.unit_price)"></span> FCFA</span>
+                    <template x-if="item.tours_per_month && item.exec_qty > 1">
+                      <span>Tours <span x-text="item.start_tour"></span>→<span x-text="item.tours_per_month"></span> planifiés · <span x-text="item.qty"></span>×<span x-text="fmt(item.unit_price)"></span> FCFA</span>
                     </template>
-                    <template x-if="item.qty === 1">
-                      <span>Tour <span x-text="item.start_tour || 1"></span> · <span x-text="fmt(item.unit_price)"></span> FCFA</span>
-                    </template>
-                    <template x-if="item.tours_per_month">
-                      <span> · <span x-text="item.tours_label"></span></span>
+                    <template x-if="item.tours_per_month && item.exec_qty === 1">
+                      <span>Tour <span x-text="item.start_tour"></span> · <span x-text="item.qty"></span>×<span x-text="fmt(item.unit_price)"></span> FCFA</span>
                     </template>
                     <template x-if="!item.tours_per_month">
-                      <span> · Ponctuel</span>
+                      <span><span x-text="fmt(item.unit_price)"></span> FCFA · Ponctuel</span>
                     </template>
                   </p>
                 </div>
@@ -606,9 +603,8 @@
                 <div>
                   <p class="text-sm font-semibold text-gray-900">Tour <span x-text="pendingStartTour"></span> seulement</p>
                   <p class="text-xs text-gray-400 mt-0.5">
-                    1 passage ×
+                    Facturé : 1 ×
                     <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
-                    = <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
                   </p>
                   <p class="text-xs text-gray-400 mt-1">Le prochain tour sera planifié automatiquement à chaque passage.</p>
                 </div>
@@ -630,11 +626,12 @@
                       <span class="ml-1.5 text-xs font-medium text-green-600 bg-green-100 rounded-full px-2 py-0.5">Recommandé</span>
                     </p>
                     <p class="text-xs text-gray-400 mt-0.5">
-                      <span x-text="pendingTours - pendingStartTour + 1"></span> passages ×
-                      <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA
-                      = <strong x-text="((pendingTours - pendingStartTour + 1) * parseInt(pendingService && pendingService.price)).toLocaleString('fr-FR')"></strong> FCFA
+                      <span x-text="pendingTours - pendingStartTour + 1"></span> passages planifiés ·
+                      Facturé : <span x-text="pendingTours"></span> ×
+                      <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span>
+                      = <strong x-text="(pendingTours * parseInt(pendingService && pendingService.price)).toLocaleString('fr-FR')"></strong> FCFA
                     </p>
-                    <p class="text-xs text-gray-400 mt-1">Tous les passages restants pré-planifiés dans le calendrier.</p>
+                    <p class="text-xs text-gray-400 mt-1">Forfait mensuel complet — passages restants pré-planifiés.</p>
                   </div>
                   <svg class="h-5 w-5 text-gray-300 group-hover:text-green-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
@@ -907,21 +904,25 @@ function saleCreate() {
 
     confirmStartTour(n) {
       this.pendingStartTour = n;
-      // Si c'est le dernier tour du cycle, on ajoute directement sans choix de paiement
+      // Dernier tour du cycle → pas de choix paiement, on ajoute directement
       if (n === this.pendingTours) {
-        this._addServiceToCart(this.pendingTours, 1, n);
+        // Forfait complet facturé, 1 seule exécution planifiée
+        this._addServiceToCart(this.pendingTours, this.pendingTours, 1, n);
       }
-      // Sinon, on passe à l'étape "Mode de paiement"
+      // Sinon → étape "Mode de paiement"
     },
 
     confirmPayMode(payAll) {
       const tours = this.pendingTours;
       const start = this.pendingStartTour || 1;
-      const qty = payAll ? (tours - start + 1) : 1;
-      this._addServiceToCart(tours, qty, start);
+      // Prix = toujours le forfait complet (tours × prix)
+      const billingQty = payAll ? tours : 1;
+      // Exécutions = tours restants à partir du tour de départ
+      const execQty = payAll ? (tours - start + 1) : 1;
+      this._addServiceToCart(tours, billingQty, execQty, start);
     },
 
-    _addServiceToCart(tours, qty, startTour) {
+    _addServiceToCart(tours, billingQty, execQty, startTour) {
       const s = this.pendingService;
       if (!s) return;
       const opt = tours ? this.toursOptions.find(o => o.value === tours) : null;
@@ -932,7 +933,8 @@ function saleCreate() {
         name: s.name,
         unit_price: s.price,
         purchase_price: '0',
-        qty,
+        qty: billingQty,       // quantité facturée (price × billingQty)
+        exec_qty: execQty,     // nombre d'exécutions à créer
         stock: null,
         tours_per_month: tours,
         tours_label: toursLabel,

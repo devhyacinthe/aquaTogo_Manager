@@ -249,10 +249,13 @@ def sale_create(request):
                         tours_per_month = int(tours_per_month_raw) if tours_per_month_raw else None
                         start_tour_raw = item.get("start_tour")
                         start_tour = int(start_tour_raw) if start_tour_raw else 1
+                        # exec_qty = passages à planifier (peut différer de qty si départ en cours de cycle)
+                        exec_qty_raw = item.get("exec_qty")
+                        exec_qty = int(exec_qty_raw) if exec_qty_raw else qty
                         sale_item = SaleItem.objects.create(
                             sale=sale,
                             service=service_obj,
-                            quantity=qty,
+                            quantity=qty,          # quantité facturée (forfait complet)
                             unit_price=unit_price,
                             purchase_price_snapshot=Decimal("0.00"),
                         )
@@ -265,12 +268,12 @@ def sale_create(request):
                             tours_per_month=tours_per_month,
                             start_tour=start_tour,
                         )
-                        # Passages suivants pré-planifiés si le client paye plusieurs tours
-                        if qty > 1 and tours_per_month:
+                        # Passages suivants basés sur exec_qty (tours restants du cycle)
+                        if exec_qty > 1 and tours_per_month:
                             from datetime import timedelta
                             interval = first_exec.interval_days() or 0
                             prev_date = sale.sale_date
-                            for i in range(1, qty):
+                            for i in range(1, exec_qty):
                                 raw_date = prev_date + timedelta(days=interval)
                                 offset = (sale.sale_date.weekday() - raw_date.weekday()) % 7
                                 next_date = raw_date + timedelta(days=offset)
