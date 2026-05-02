@@ -296,18 +296,34 @@ def download_prestations_demain(request):
     executions = (
         ServiceExecution.objects
         .filter(is_completed=False, next_due_date=tomorrow)
-        .select_related("client", "service")
-        .order_by("scheduled_time", "client__name")
+        .select_related("client", "service", "sale_item__sale")
+        .order_by("client__name")
     )
+
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph as RLParagraph
+
+    STATUS_CFG = {
+        "paid":    ("Paye",    "#16a34a"),
+        "partial": ("Partiel", "#d97706"),
+        "unpaid":  ("Impaye",  "#dc2626"),
+    }
+
+    def statut_cell(payment_status):
+        label, hex_color = STATUS_CFG.get(payment_status, ("—", "#6b7280"))
+        st = ParagraphStyle("SC", fontName="Helvetica-Bold", fontSize=8.5,
+                             textColor=rl_colors.HexColor(hex_color))
+        return RLParagraph(label, st)
 
     rows = []
     for ex in executions:
+        sale = ex.sale_item.sale if ex.sale_item else None
         rows.append([
             ex.client.name if ex.client else "—",
-            ex.client.phone if ex.client and ex.client.phone else "—",
             ex.service.name,
             f"Tour {ex.start_tour or 1}" if ex.tours_per_month else "Ponctuel",
-            ex.scheduled_time.strftime("%H:%M") if ex.scheduled_time else "—",
+            statut_cell(sale.payment_status if sale else None),
         ])
 
     from reportlab.lib.units import cm
@@ -316,9 +332,9 @@ def download_prestations_demain(request):
         buf,
         title_text=f"Prestations du {tomorrow.strftime('%d/%m/%Y')}",
         subtitle_text=f"Planning des interventions  —  {len(rows)} passage{'s' if len(rows) != 1 else ''}",
-        col_headers=["Client", "Telephone", "Prestation", "Tour", "Heure prevue"],
+        col_headers=["Client", "Prestation", "Tour", "Statut paiement"],
         rows=rows,
-        col_widths=[6*cm, 4*cm, 7*cm, 3*cm, 3.5*cm],
+        col_widths=[7*cm, 9*cm, 4*cm, 4.5*cm],
     )
     buf.seek(0)
     response = HttpResponse(buf, content_type="application/pdf")
