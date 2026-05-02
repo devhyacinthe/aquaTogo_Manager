@@ -25,6 +25,74 @@
     {% endif %}
   </div>
 
+  {# ── Alerte 20h — télécharger avant minuit ──────────────────────────────── #}
+  <div x-data="{
+        show: false,
+        dismissed: false,
+        check() { const h = new Date().getHours(); this.show = !this.dismissed && h >= 20; },
+        dismiss() { this.dismissed = true; this.show = false; }
+       }"
+       x-init="check(); setInterval(() => check(), 60000)"
+       x-show="show"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 -translate-y-2"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       style="display:none">
+    <div class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3">
+      <div class="flex items-start gap-3">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 mt-0.5">
+          <svg class="h-4 w-4 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-bold text-red-800">⚠ Pensez à télécharger vos fichiers avant minuit !</p>
+          <p class="text-xs text-red-600 mt-0.5">Après 00h00, la liste des prestations de demain et les ventes du jour se mettent à jour.</p>
+        </div>
+        <button type="button" @click="dismiss()"
+                class="shrink-0 p-1 rounded-full text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors mt-0.5">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Téléchargements ──────────────────────────────────────────────────────── #}
+  <div>
+    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Téléchargements</h2>
+    <div class="grid grid-cols-2 gap-3">
+
+      <a href="{% url 'core:download_prestations_demain' %}"
+         class="flex flex-col items-start gap-2 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3.5 hover:bg-purple-100 active:scale-95 transition-all group">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 group-hover:bg-purple-200 transition-colors">
+          <svg class="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-purple-900">Prestations demain</p>
+          <p class="text-xs text-purple-500 mt-0.5">PDF · Planning du {{ tomorrow|date:"d/m/Y" }}</p>
+        </div>
+      </a>
+
+      <a href="{% url 'core:download_ventes_aujourd_hui' %}"
+         class="flex flex-col items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3.5 hover:bg-emerald-100 active:scale-95 transition-all group">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 group-hover:bg-emerald-200 transition-colors">
+          <svg class="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-emerald-900">Ventes aujourd'hui</p>
+          <p class="text-xs text-emerald-500 mt-0.5">PDF · Articles du {{ today|date:"d/m/Y" }}</p>
+        </div>
+      </a>
+
+    </div>
+  </div>
+
   {# ── Alerte J-1 prestations ──────────────────────────────────────────────── #}
   {% if due_tomorrow %}
   <div class="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
