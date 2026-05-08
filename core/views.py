@@ -13,7 +13,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
-from .forms import PasswordUpdateForm, ProfileForm
+from .forms import EmployeCreateForm, EmployeEditForm, PasswordUpdateForm, ProfileForm
 from .models import UserProfile
 
 
@@ -485,6 +485,127 @@ def download_ventes_aujourd_hui(request):
         f'attachment; filename="ventes_{today.strftime("%Y-%m-%d")}.pdf"'
     )
     return response
+
+
+def _manager_required(request):
+    """Retourne True si le user est manager, lève PermissionDenied sinon."""
+    from django.core.exceptions import PermissionDenied
+    profile = getattr(request.user, "profile", None)
+    if not profile or not profile.is_manager:
+        raise PermissionDenied
+    return True
+
+
+MAX_EMPLOYES = 2
+
+
+@login_required
+def employe_list(request):
+    _manager_required(request)
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    employes = (
+        User.objects
+        .filter(profile__role="employe")
+        .select_related("profile")
+        .order_by("username")
+    )
+    count = employes.count()
+    context = {
+        "employes": employes,
+        "count": count,
+        "max": MAX_EMPLOYES,
+        "can_create": count < MAX_EMPLOYES,
+        "create_form": EmployeCreateForm(),
+        "app_name": "core",
+    }
+    return render(request, "core/employes.html", context)
+
+
+@login_required
+def employe_create(request):
+    _manager_required(request)
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    current_count = User.objects.filter(profile__role="employe").count()
+    if current_count >= MAX_EMPLOYES:
+        messages.error(request, f"Limite de {MAX_EMPLOYES} employés atteinte.")
+        return redirect("core:employe_list")
+
+    if request.method == "POST":
+        form = EmployeCreateForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            from .models import UserProfile
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.role = UserProfile.Role.EMPLOYE
+            profile.phone = form.cleaned_data.get("phone", "")
+            profile.save()
+            messages.success(request, f"Compte employé « {user.username} » créé.")
+            return redirect("core:employe_list")
+        # Re-affiche la liste avec erreurs
+        from django.contrib.auth import get_user_model as _u
+        employes = _u().objects.filter(profile__role="employe").select_related("profile")
+        return render(request, "core/employes.html", {
+            "employes": employes,
+            "count": employes.count(),
+            "max": MAX_EMPLOYES,
+            "can_create": employes.count() < MAX_EMPLOYES,
+            "create_form": form,
+            "open_create": True,
+            "app_name": "core",
+        })
+    return redirect("core:employe_list")
+
+
+@login_required
+def employe_edit(request, pk):
+    _manager_required(request)
+    from django.contrib.auth import get_user_model
+    from django.shortcuts import get_object_or_404
+    User = get_user_model()
+    user = get_object_or_404(User, pk=pk, profile__role="employe")
+    profile = user.profile
+
+    if request.method == "POST":
+        form = EmployeEditForm(request.POST, instance=user, profile=profile)
+        if form.is_valid():
+            form.save()
+            profile.phone = form.cleaned_data.get("phone", "")
+            profile.save()
+            messages.success(request, f"Compte « {user.username} » mis à jour.")
+            return redirect("core:employe_list")
+        messages.error(request, "Veuillez corriger les erreurs.")
+    return redirect("core:employe_list")
+
+
+@login_required
+def employe_toggle(request, pk):
+    _manager_required(request)
+    from django.contrib.auth import get_user_model
+    from django.shortcuts import get_object_or_404
+    from django.views.decorators.http import require_POST as _rp
+    User = get_user_model()
+    user = get_object_or_404(User, pk=pk, profile__role="employe")
+    user.is_active = not user.is_active
+    user.save(update_fields=["is_active"])
+    state = "activé" if user.is_active else "désactivé"
+    messages.success(request, f"Compte « {user.username} » {state}.")
+    return redirect("core:employe_list")
+
+
+@login_required
+def employe_delete(request, pk):
+    _manager_required(request)
+    from django.contrib.auth import get_user_model
+    from django.shortcuts import get_object_or_404
+    User = get_user_model()
+    user = get_object_or_404(User, pk=pk, profile__role="employe")
+    username = user.username
+    user.delete()
+    messages.success(request, f"Compte « {username} » supprimé.")
+    return redirect("core:employe_list")
 
 
 @login_required

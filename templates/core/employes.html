@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des employés{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5"
+     x-data="{
+       openCreate: {% if open_create %}true{% else %}false{% endif %},
+       editId: null, editUsername: '', editPrenom: '', editNom: '', editEmail: '', editPhone: '',
+       confirmDelete: null, confirmDeleteName: '',
+       openEdit(emp) {
+         this.editId = emp.id;
+         this.editUsername = emp.username;
+         this.editPrenom = emp.prenom;
+         this.editNom = emp.nom;
+         this.editEmail = emp.email;
+         this.editPhone = emp.phone;
+       },
+       closeEdit() { this.editId = null; },
+     }">
+
+  {# ── En-tête ── #}
+  <div class="flex items-center gap-3">
+    <a href="{% url 'core:dashboard' %}"
+       class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <div class="flex-1 min-w-0">
+      <h1 class="text-xl font-bold text-gray-900">Gestion des employés</h1>
+      <p class="text-sm text-gray-400 mt-0.5">{{ count }} / {{ max }} compte{{ count|pluralize }} utilisé{{ count|pluralize }}</p>
+    </div>
+    {% if can_create %}
+    <button type="button" @click="openCreate = true"
+            class="btn-primary text-sm py-2 px-4">
+      + Ajouter
+    </button>
+    {% else %}
+    <span class="inline-flex items-center rounded-xl bg-gray-100 px-3 py-2 text-xs font-medium text-gray-500">
+      Limite atteinte
+    </span>
+    {% endif %}
+  </div>
+
+  {# ── Liste des employés ── #}
+  {% if employes %}
+  <div class="space-y-3">
+    {% for emp in employes %}
+    <div class="card">
+      <div class="flex items-start gap-4">
+
+        {# Avatar #}
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full
+             {% if emp.is_active %}bg-brand-100 text-brand-700{% else %}bg-gray-100 text-gray-400{% endif %}
+             text-base font-bold">
+          {{ emp.username|first|upper }}
+        </div>
+
+        {# Infos #}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <p class="text-sm font-semibold text-gray-900">
+              {{ emp.first_name }} {{ emp.last_name }}
+              {% if not emp.first_name and not emp.last_name %}{{ emp.username }}{% endif %}
+            </p>
+            {% if emp.is_active %}
+            <span class="badge-green text-xs">Actif</span>
+            {% else %}
+            <span class="badge-red text-xs">Désactivé</span>
+            {% endif %}
+          </div>
+          <p class="text-xs text-gray-500 mt-0.5">@{{ emp.username }}</p>
+          {% if emp.profile.phone %}
+          <p class="text-xs text-gray-400 mt-0.5">{{ emp.profile.phone }}</p>
+          {% endif %}
+
+          {# Dernière connexion #}
+          <div class="flex items-center gap-1.5 mt-2">
+            <svg class="h-3.5 w-3.5 text-gray-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+            </svg>
+            {% if emp.last_login %}
+            <span class="text-xs text-gray-400">
+              Dernière connexion : {{ emp.last_login|date:"d/m/Y à H:i" }}
+            </span>
+            {% else %}
+            <span class="text-xs text-gray-300 italic">Jamais connecté</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Actions #}
+        <div class="flex flex-col gap-1.5 shrink-0">
+          {# Modifier #}
+          <button type="button"
+                  @click="openEdit({
+                    id: {{ emp.pk }},
+                    username: '{{ emp.username|escapejs }}',
+                    prenom: '{{ emp.first_name|escapejs }}',
+                    nom: '{{ emp.last_name|escapejs }}',
+                    email: '{{ emp.email|escapejs }}',
+                    phone: '{{ emp.profile.phone|escapejs }}'
+                  })"
+                  class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z"/>
+            </svg>
+            Modifier
+          </button>
+
+          {# Activer / Désactiver #}
+          <form method="post" action="{% url 'core:employe_toggle' emp.pk %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="w-full inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors
+                    {% if emp.is_active %}border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100{% else %}border-green-200 bg-green-50 text-green-700 hover:bg-green-100{% endif %}">
+              {% if emp.is_active %}
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636"/>
+              </svg>
+              Désactiver
+              {% else %}
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
+              </svg>
+              Activer
+              {% endif %}
+            </button>
+          </form>
+
+          {# Supprimer #}
+          <button type="button"
+                  @click="confirmDelete = {{ emp.pk }}; confirmDeleteName = '{{ emp.username|escapejs }}'"
+                  class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916"/>
+            </svg>
+            Supprimer
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="card text-center py-12">
+    <div class="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-gray-100 mb-4">
+      <svg class="h-7 w-7 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
+      </svg>
+    </div>
+    <p class="text-sm font-medium text-gray-500">Aucun employé enregistré</p>
+    <p class="text-xs text-gray-400 mt-1">Ajoutez jusqu'à {{ max }} comptes employé.</p>
+  </div>
+  {% endif %}
+
+
+  {# ══ Modal : Créer un employé ══ #}
+  <div x-show="openCreate"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4"
+       @click.self="openCreate = false"
+       style="display:none">
+    <div x-show="openCreate"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0"
+         x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="translate-y-0"
+         x-transition:leave-end="translate-y-full lg:opacity-0"
+         class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
+
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900">Nouvel employé</h3>
+        <button type="button" @click="openCreate = false"
+                class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <form method="post" action="{% url 'core:employe_create' %}" class="px-4 py-4 space-y-3">
+        {% csrf_token %}
+        {% for field in create_form %}
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">{{ field.label }}{% if field.field.required %} *{% endif %}</label>
+          {{ field }}
+          {% if field.errors %}
+          <p class="text-xs text-red-500 mt-1">{{ field.errors.0 }}</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="w-full btn-primary py-3 justify-center font-semibold mt-2">
+          Créer le compte
+        </button>
+      </form>
+    </div>
+  </div>
+
+
+  {# ══ Modal : Modifier un employé ══ #}
+  <div x-show="editId !== null"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4"
+       @click.self="closeEdit()"
+       style="display:none">
+    <div x-show="editId !== null"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0"
+         x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100"
+         class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
+
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900">Modifier <span class="text-brand-600" x-text="'@' + editUsername"></span></h3>
+        <button type="button" @click="closeEdit()"
+                class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <form method="post" :action="`/employes/${editId}/modifier/`" class="px-4 py-4 space-y-3">
+        {% csrf_token %}
+        {% with CSS="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" %}
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Prénom</label>
+          <input type="text" name="first_name" x-model="editPrenom" class="{{ CSS }}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+          <input type="text" name="last_name" x-model="editNom" class="{{ CSS }}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Email</label>
+          <input type="email" name="email" x-model="editEmail" class="{{ CSS }}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Téléphone</label>
+          <input type="text" name="phone" x-model="editPhone" class="{{ CSS }}" placeholder="+228 XX XX XX XX">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Nouveau mot de passe <span class="text-gray-400 font-normal">(laisser vide pour conserver)</span></label>
+          <input type="password" name="new_password" class="{{ CSS }}" placeholder="Min. 8 caractères">
+        </div>
+        {% endwith %}
+        <button type="submit" class="w-full btn-primary py-3 justify-center font-semibold mt-2">
+          Enregistrer
+        </button>
+      </form>
+    </div>
+  </div>
+
+
+  {# ══ Modal : Confirmation suppression ══ #}
+  <div x-show="confirmDelete !== null"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       class="fixed inset-0 z-50 bg-gray-900/60 flex items-center justify-center p-4"
+       style="display:none">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center">
+      <div class="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-red-100 mb-4">
+        <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+        </svg>
+      </div>
+      <p class="text-sm font-semibold text-gray-900 mb-1">Supprimer ce compte ?</p>
+      <p class="text-xs text-gray-500 mb-5">Le compte <strong x-text="confirmDeleteName"></strong> sera définitivement supprimé.</p>
+      <div class="flex gap-3">
+        <button type="button" @click="confirmDelete = null"
+                class="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+          Annuler
+        </button>
+        <form method="post" :action="`/employes/${confirmDelete}/supprimer/`" class="flex-1">
+          {% csrf_token %}
+          <button type="submit"
+                  class="w-full rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors">
+            Supprimer
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
