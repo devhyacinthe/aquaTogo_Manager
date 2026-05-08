@@ -51,7 +51,7 @@
   </div>
 
   <!-- Zone principale -->
-  <div class="lg:pl-64 flex flex-col min-h-full pb-16 lg:pb-0">
+  <div class="lg:pl-64 flex flex-col min-h-full {% if user_role != 'employe' %}pb-16{% endif %} lg:pb-0">
 
     <!-- Topbar mobile -->
     <header class="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4 lg:hidden">
@@ -105,7 +105,8 @@
 
   </div>
 
-  <!-- ══ BOTTOM NAV MOBILE ══════════════════════════════════════════════════ -->
+  <!-- ══ BOTTOM NAV MOBILE (manager uniquement) ════════════════════════════ -->
+  {% if user_role != 'employe' %}
   <nav class="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200 lg:hidden">
     <div class="grid grid-cols-5 h-16">
 
@@ -162,6 +163,7 @@
 
     </div>
   </nav>
+  {% endif %}
 
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   {% block extra_scripts %}{% endblock %}

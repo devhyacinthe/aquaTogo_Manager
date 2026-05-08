@@ -367,6 +367,67 @@ def quote_pdf(request, pk):
         story.append(Spacer(1, 0.15 * cm))
         story.append(_p(quote.note, fontSize=9, textColor=gray))
 
+    # ── Historique des impayés du client ──────────────────────────────────────
+    if quote.client:
+        unpaid_sales = list(
+            quote.client.sales
+            .filter(payment_status__in=["unpaid", "partial"])
+            .order_by("sale_date")
+        )
+        outstanding = quote.client.outstanding_balance
+        if outstanding > 0 and unpaid_sales:
+            story.append(Spacer(1, 0.5 * cm))
+            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))
+            story.append(Spacer(1, 0.3 * cm))
+            story.append(_p(
+                '<font color="#DC2626"><b>Historique des impayés — Compte client</b></font>',
+                fontSize=10,
+            ))
+            story.append(Spacer(1, 0.25 * cm))
+
+            RED     = colors.HexColor("#DC2626")
+            RED_BG  = colors.HexColor("#FEE2E2")
+            RED_ROW = colors.HexColor("#FFF7F7")
+
+            debt_rows = [[
+                _p("<b>Date</b>",           fontSize=8),
+                _p("<b>Facture</b>",        fontSize=8),
+                _p("<b>Montant (FCFA)</b>", fontSize=8, alignment=TA_RIGHT),
+                _p("<b>Payé (FCFA)</b>",    fontSize=8, alignment=TA_RIGHT),
+                _p("<b>Reste dû (FCFA)</b>",fontSize=8, alignment=TA_RIGHT),
+            ]]
+            for s in unpaid_sales:
+                paid = s.total_amount - s.remaining_balance
+                debt_rows.append([
+                    _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
+                    _p(f"N° {s.pk:04d}",   fontSize=8),
+                    _p(_fmt(s.total_amount),     fontSize=8, alignment=TA_RIGHT),
+                    _p(_fmt(paid),               fontSize=8, alignment=TA_RIGHT),
+                    _p(f'<font color="#DC2626">{_fmt(s.remaining_balance)}</font>',
+                       fontSize=8, alignment=TA_RIGHT),
+                ])
+            debt_rows.append([
+                "", "", "",
+                _p("<b>TOTAL DÛ</b>", fontSize=9, alignment=TA_RIGHT),
+                _p(f'<font color="#DC2626"><b>{_fmt(outstanding)} FCFA</b></font>',
+                   fontSize=9, alignment=TA_RIGHT),
+            ])
+
+            dt = Table(debt_rows, colWidths=[3*cm, 4.5*cm, 3*cm, 2.5*cm, 3.5*cm])
+            dt.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, 0),   RED_BG),
+                ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.HexColor("#991B1B")),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, RED_ROW]),
+                ("BACKGROUND",    (0, -1),(-1, -1),  RED_BG),
+                ("TOPPADDING",    (0, 0), (-1, -1),  5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
+                ("LEFTPADDING",   (0, 0), (-1, -1),  8),
+                ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
+                ("GRID",          (0, 0), (-1, -1),  0.3, colors.HexColor("#FECACA")),
+                ("LINEABOVE",     (0, -1),(-1, -1),  1, RED),
+            ]))
+            story.append(dt)
+
     # ── Pied de page ──────────────────────────────────────────────────────────
     story.append(Spacer(1, 1.2 * cm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#E5E7EB")))

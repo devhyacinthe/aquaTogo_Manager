@@ -609,6 +609,79 @@ def employe_delete(request, pk):
 
 
 @login_required
+def employe_home(request):
+    today = timezone.now().date()
+    tomorrow = today + timedelta(days=1)
+    from services.models import ServiceExecution
+    tomorrow_count = ServiceExecution.objects.filter(
+        is_completed=False, next_due_date=tomorrow
+    ).count()
+    from products.models import Product
+    products_count = Product.objects.filter(is_active=True).count()
+    return render(request, "core/employe_home.html", {
+        "tomorrow": tomorrow,
+        "tomorrow_count": tomorrow_count,
+        "products_count": products_count,
+        "app_name": "core",
+    })
+
+
+@login_required
+def telechargements(request):
+    today = timezone.now().date()
+    tomorrow = today + timedelta(days=1)
+    from services.models import ServiceExecution
+    tomorrow_count = ServiceExecution.objects.filter(
+        is_completed=False, next_due_date=tomorrow
+    ).count()
+    from products.models import Product
+    products_count = Product.objects.filter(is_active=True).count()
+    return render(request, "core/telechargements.html", {
+        "tomorrow": tomorrow,
+        "tomorrow_count": tomorrow_count,
+        "products_count": products_count,
+        "app_name": "core",
+    })
+
+
+@login_required
+def download_produits_pdf(request):
+    import io
+    from products.models import Product
+    from reportlab.lib.units import cm
+
+    products = (
+        Product.objects
+        .filter(is_active=True)
+        .select_related("category")
+        .order_by("category__name", "name")
+    )
+    rows = []
+    for p in products:
+        rows.append([
+            p.category.name if p.category else "—",
+            p.name,
+            f"{int(p.selling_price):,}".replace(",", " "),
+            f"{int(p.wholesale_price):,}".replace(",", " ") if p.wholesale_price else "—",
+            str(p.stock_quantity),
+        ])
+
+    buf = io.BytesIO()
+    _build_pdf(
+        buf,
+        title_text="Liste des produits",
+        subtitle_text=f"Prix de vente — {len(rows)} produit{'s' if len(rows) != 1 else ''}",
+        col_headers=["Catégorie", "Produit", "Prix détail (FCFA)", "Prix gros (FCFA)", "Stock"],
+        rows=rows,
+        col_widths=[5*cm, 9*cm, 5*cm, 5*cm, 3*cm],
+    )
+    buf.seek(0)
+    response = HttpResponse(buf, content_type="application/pdf")
+    response["Content-Disposition"] = "inline; filename=\"produits.pdf\""
+    return response
+
+
+@login_required
 def profile(request):
     user = request.user
     profile_obj, _ = UserProfile.objects.get_or_create(user=user)

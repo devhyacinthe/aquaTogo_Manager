@@ -3,9 +3,9 @@ from django.urls import reverse
 
 # Préfixes autorisés pour un employé
 _EMPLOYE_ALLOWED_PREFIXES = (
-    "/ventes/",
-    "/produits/",
-    "/clients/",
+    "/employe/",
+    "/telechargements/",
+    "/dashboard/telecharger/",
     "/prestations/",
     "/profil/",
     "/login/",
