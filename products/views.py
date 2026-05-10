@@ -76,12 +76,77 @@ def product_detail(request, pk):
     product = get_object_or_404(Product.objects.select_related("category"), pk=pk)
 
     from sales.models import SaleItem
+    from django.db.models import Sum
+    from django.db.models.functions import TruncMonth
+    import datetime
 
-    sale_history = (
-        SaleItem.objects.filter(product=product)
-        .select_related("sale", "sale__client")
-        .order_by("-sale__sale_date", "-sale__id")[:10]
+    FRENCH_MONTHS = [
+        "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+    ]
+
+    now = datetime.date.today()
+
+    base_qs = SaleItem.objects.filter(product=product).select_related("sale", "sale__client")
+
+    # Build list of months that have sales (for the dropdown)
+    months_qs = (
+        base_qs
+        .annotate(month=TruncMonth("sale__sale_date"))
+        .values("month")
+        .distinct()
+        .order_by("-month")
     )
+    available_months = [
+        {
+            "value": f"{m['month'].year}-{m['month'].month:02d}",
+            "year": m["month"].year,
+            "month": m["month"].month,
+            "label": f"{FRENCH_MONTHS[m['month'].month]} {m['month'].year}",
+        }
+        for m in months_qs
+    ]
+
+    # Parse filter: ?periode=2026-05 or ?periode=0 (all)
+    periode = request.GET.get("periode")
+    if periode is None:
+        filter_month = now.month
+        filter_year = now.year
+        current_periode = f"{now.year}-{now.month:02d}"
+    elif periode == "0":
+        filter_month = 0
+        filter_year = 0
+        current_periode = "0"
+    else:
+        try:
+            year_str, month_str = periode.split("-")
+            filter_year = int(year_str)
+            filter_month = int(month_str)
+            current_periode = periode
+        except (ValueError, AttributeError):
+            filter_month = now.month
+            filter_year = now.year
+            current_periode = f"{now.year}-{now.month:02d}"
+
+    # Apply filter and compute totals
+    if filter_month == 0:
+        filtered_qs = base_qs.order_by("-sale__sale_date", "-sale__id")
+        period_label = "tout l'historique"
+    else:
+        filtered_qs = (
+            base_qs
+            .filter(sale__sale_date__year=filter_year, sale__sale_date__month=filter_month)
+            .order_by("-sale__sale_date", "-sale__id")
+        )
+        period_label = FRENCH_MONTHS[filter_month] + f" {filter_year}" if 1 <= filter_month <= 12 else ""
+
+    totals = filtered_qs.aggregate(
+        total_qty=Sum("quantity"),
+        total_revenue=Sum("line_total"),
+        total_profit=Sum("line_profit"),
+    )
+
+    sale_history = filtered_qs[:50] if filter_month == 0 else filtered_qs
 
     return render(
         request,
@@ -90,6 +155,10 @@ def product_detail(request, pk):
             "product": product,
             "sale_history": sale_history,
             "is_staff": request.user.is_staff,
+            "available_months": available_months,
+            "current_periode": current_periode,
+            "period_label": period_label,
+            "totals": totals,
         },
     )
 
