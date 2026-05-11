@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Nouveau devis{% endblock %}
+{% block title %}{% if editing_quote %}Modifier le devis #{{ editing_quote.pk|stringformat:"04d" }}{% else %}Nouveau devis{% endif %}{% endblock %}
 
 {% block extra_head %}
 {{ products_data|json_script:"d-products" }}
 {{ services_data|json_script:"d-services" }}
+{% if editing_quote %}
+{{ initial_cart|json_script:"d-initial-cart" }}
+{% if initial_client %}{{ initial_client|json_script:"d-initial-client" }}{% endif %}
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -12,13 +16,15 @@
 
   {# ── En-tête ── #}
   <div class="flex items-center gap-3 mb-5">
-    <a href="{% url 'devis:list' %}"
+    <a href="{% if editing_quote %}{% url 'devis:detail' editing_quote.pk %}{% else %}{% url 'devis:list' %}{% endif %}"
        class="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors shadow-sm">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
       </svg>
     </a>
-    <h1 class="text-xl font-bold text-gray-900">Nouveau devis</h1>
+    <h1 class="text-xl font-bold text-gray-900">
+      {% if editing_quote %}Modifier le devis #{{ editing_quote.pk|stringformat:"04d" }}{% else %}Nouveau devis{% endif %}
+    </h1>
   </div>
 
   {% if error %}
@@ -449,7 +455,9 @@
   </div>
 
   {# ── Formulaire caché ── #}
-  <form id="quote-form" method="post" x-ref="form" style="display:none">
+  <form id="quote-form" method="post"
+        action="{% if editing_quote %}{% url 'devis:edit' editing_quote.pk %}{% endif %}"
+        x-ref="form" style="display:none">
     {% csrf_token %}
     <input type="hidden" id="inp-cart"        name="cart_data" />
     <input type="hidden" id="inp-client"      name="client_id" />
@@ -463,19 +471,22 @@
 {% block extra_scripts %}
 <script>
 function quoteCreate() {
+  const _rawCart   = document.getElementById('d-initial-cart');
+  const _rawClient = document.getElementById('d-initial-client');
   return {
     products: JSON.parse(document.getElementById('d-products').textContent),
     services: JSON.parse(document.getElementById('d-services').textContent),
 
-    clientQuery: '', clientTimeout: null, clientResults: [], selectedClient: null,
+    clientQuery: '', clientTimeout: null, clientResults: [],
+    selectedClient: _rawClient ? JSON.parse(_rawClient.textContent) : null,
     newClientName: '', newClientPhone: '', newClientSaving: false, newClientError: '',
     customLabel: '', customPrice: '', customQty: 1, customItemError: '',
 
     modal: null,
     searchQuery: '',
-    cart: [],
-    validUntil: '',
-    note: '',
+    cart: _rawCart ? JSON.parse(_rawCart.textContent) : [],
+    validUntil: '{{ editing_quote.valid_until.isoformat|default:"" }}',
+    note: '{{ editing_quote.note|default:""|escapejs }}',
     today: '{{ today }}',
     submitting: false,
 

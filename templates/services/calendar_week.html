@@ -59,6 +59,7 @@
       {% if day.date == today %}border-brand-300 shadow-sm shadow-brand-100{% else %}border-gray-200{% endif %}">
 
       {# Entête du jour #}
+      {% with total_count=day.executions|length|add:day.tasks|length %}
       <div class="flex items-center justify-between px-4 py-2.5
         {% if day.date == today %}bg-brand-600 text-white{% elif day.date < today %}bg-gray-50 text-gray-400{% else %}bg-gray-50 text-gray-700{% endif %}">
         <div class="flex items-center gap-2">
@@ -68,10 +69,10 @@
           </span>
         </div>
         <div class="flex items-center gap-2">
-          {% if day.executions %}
+          {% if total_count %}
           <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold
             {% if day.date == today %}bg-white/20 text-white{% else %}bg-gray-200 text-gray-600{% endif %}">
-            {{ day.executions|length }}
+            {{ total_count }}
           </span>
           {% endif %}
           <a href="{% url 'services:calendar_day' %}?date={{ day.date|date:'Y-m-d' }}"
@@ -80,15 +81,17 @@
           </a>
         </div>
       </div>
+      {% endwith %}
 
-      {# Prestations du jour #}
-      {% if day.executions %}
+      {# Contenu du jour #}
+      {% if day.executions or day.tasks %}
       <div class="divide-y divide-gray-100 bg-white">
+
+        {# Prestations #}
         {% for ex in day.executions %}
         <div class="flex items-center justify-between px-4 py-3 gap-3
           {% if ex.is_overdue %}bg-red-50/50{% endif %}">
           <div class="flex items-center gap-3 min-w-0">
-            {# Heure si disponible #}
             {% if ex.scheduled_time %}
             <span class="text-xs font-mono text-gray-500 shrink-0 w-10">{{ ex.scheduled_time|time:"H:i" }}</span>
             {% else %}
@@ -102,33 +105,47 @@
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            {# Badge confirmation #}
             {% if ex.confirmed %}
             <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-              <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
-              </svg>
+              <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
               Confirmé
             </span>
             {% else %}
             <form method="post" action="{% url 'services:execution_confirm' ex.pk %}">
               {% csrf_token %}
               <input type="hidden" name="next" value="{% url 'services:calendar_week' %}?date={{ week_start|date:'Y-m-d' }}">
-              <button type="submit"
-                      class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-500 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-600 transition-colors">
+              <button type="submit" class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-500 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-600 transition-colors">
                 Confirmer
               </button>
             </form>
             {% endif %}
-            {# Badge statut #}
-            {% if ex.is_overdue %}
-            <span class="badge-red">Retard</span>
-            {% elif ex.is_completed %}
-            <span class="badge-green">Fait</span>
-            {% endif %}
+            {% if ex.is_overdue %}<span class="badge-red">Retard</span>{% elif ex.is_completed %}<span class="badge-green">Fait</span>{% endif %}
           </div>
         </div>
         {% endfor %}
+
+        {# Tâches #}
+        {% for task in day.tasks %}
+        <div class="flex items-center justify-between px-4 py-3 gap-3 bg-amber-50/40
+          {% if task.is_overdue %}bg-red-50/50{% endif %}">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="text-xs text-gray-300 shrink-0 w-10">
+              <svg class="h-3.5 w-3.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <a href="{% url 'services:task_detail' task.pk %}" class="text-sm font-medium text-gray-900 truncate hover:text-brand-600 transition-colors">{{ task.title }}</a>
+              <p class="text-xs text-amber-600 truncate">{{ task.client.name }}</p>
+            </div>
+          </div>
+          <div class="shrink-0">
+            {% if task.is_overdue %}<span class="badge-red">Retard</span>
+            {% else %}<span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Tâche</span>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+
       </div>
       {% else %}
       <div class="px-4 py-3 bg-white">

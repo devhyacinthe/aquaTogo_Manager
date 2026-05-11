@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Nouvelle tâche{% endblock %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-5">
+  <a href="{% url 'services:task_list' %}"
+     class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+    <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+    </svg>
+  </a>
+  <h1 class="text-xl font-bold text-gray-900">Nouvelle tâche</h1>
+</div>
+
+{% if errors %}
+<div class="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 space-y-1">
+  {% for e in errors %}<p>{{ e }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<form method="post"
+      x-data="{
+        products: {{ products|length }},
+        rows: [],
+        addRow() { this.rows.push({ product_id: '', qty: 1 }); },
+        removeRow(i) { this.rows.splice(i, 1); },
+      }">
+  {% csrf_token %}
+
+  <div class="space-y-4">
+
+    {# Titre #}
+    <div class="card p-4 space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Titre <span class="text-red-500">*</span></label>
+        <input type="text" name="title" value="{{ post.title|default:'' }}" required
+               placeholder="Ex : Livraison filtre + nettoyage aquarium"
+               class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        {# Client #}
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Client <span class="text-red-500">*</span></label>
+          <select name="client_id" required
+                  class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors">
+            <option value="">-- Choisir --</option>
+            {% for c in clients %}
+            <option value="{{ c.pk }}" {% if post.client_id == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Date #}
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Date prévue <span class="text-red-500">*</span></label>
+          <input type="date" name="task_date" value="{{ post.task_date|default:today }}" required
+                 class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors">
+        </div>
+      </div>
+
+      {# Note #}
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Notes</label>
+        <textarea name="note" rows="2" placeholder="Instructions, adresse, remarques…"
+                  class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors resize-none">{{ post.note|default:'' }}</textarea>
+      </div>
+    </div>
+
+    {# Produits à livrer #}
+    <div class="card p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700">Produits à livrer / utiliser</h2>
+        <button type="button" @click="addRow()"
+                class="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+          </svg>
+          Ajouter
+        </button>
+      </div>
+
+      <template x-if="rows.length === 0">
+        <p class="text-xs text-gray-400 py-2 text-center">Aucun produit ajouté — facultatif.</p>
+      </template>
+
+      <div class="space-y-2">
+        <template x-for="(row, i) in rows" :key="i">
+          <div class="flex gap-2 items-center">
+            <select :name="'product_id'" x-model="row.product_id"
+                    class="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none transition-colors">
+              <option value="">-- Produit --</option>
+              {% for p in products %}
+              <option value="{{ p.pk }}">{{ p.name }}{% if p.is_out_of_stock %} (rupture){% endif %}</option>
+              {% endfor %}
+            </select>
+            <input type="number" :name="'product_qty'" x-model.number="row.qty" min="1"
+                   class="w-20 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-center focus:border-brand-400 focus:outline-none transition-colors">
+            <button type="button" @click="removeRow(i)"
+                    class="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary w-full py-3 font-semibold text-sm flex items-center justify-center gap-2">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+      </svg>
+      Créer la tâche
+    </button>
+  </div>
+</form>
+{% endblock %}

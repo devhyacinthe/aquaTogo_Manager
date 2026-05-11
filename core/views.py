@@ -199,7 +199,7 @@ def _fmt(n):
 
 
 def _build_pdf(buffer, title_text, subtitle_text, col_headers, rows, col_widths,
-               extra_story=None):
+               extra_story=None, after_story=None):
     """Génère un PDF avec logo, en-tête, éléments optionnels puis tableau."""
     import os
     from reportlab.lib import colors
@@ -281,6 +281,8 @@ def _build_pdf(buffer, title_text, subtitle_text, col_headers, rows, col_widths,
     if extra_story:
         story += extra_story
     story.append(table)
+    if after_story:
+        story += after_story
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
@@ -288,7 +290,7 @@ def _build_pdf(buffer, title_text, subtitle_text, col_headers, rows, col_widths,
 @login_required
 def download_prestations_demain(request):
     import io
-    from services.models import ServiceExecution
+    from services.models import ServiceExecution, Task
 
     today = timezone.now().date()
     tomorrow = today + timedelta(days=1)
@@ -300,14 +302,23 @@ def download_prestations_demain(request):
         .order_by("client__name")
     )
 
+    tasks = (
+        Task.objects
+        .filter(is_completed=False, task_date=tomorrow)
+        .select_related("client")
+        .prefetch_related("task_products__product")
+        .order_by("client__name")
+    )
+
     from reportlab.lib import colors as rl_colors
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Paragraph as RLParagraph
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph as RLParagraph, Spacer, Table, TableStyle
 
     STATUS_CFG = {
-        "paid":    ("Paye",    "#16a34a"),
+        "paid":    ("Payé",    "#16a34a"),
         "partial": ("Partiel", "#d97706"),
-        "unpaid":  ("Impaye",  "#dc2626"),
+        "unpaid":  ("Impayé",  "#dc2626"),
     }
 
     def statut_cell(payment_status):
@@ -316,6 +327,7 @@ def download_prestations_demain(request):
                              textColor=rl_colors.HexColor(hex_color))
         return RLParagraph(label, st)
 
+    # ── Tableau prestations ───────────────────────────────────────────────────
     rows = []
     for ex in executions:
         sale = ex.sale_item.sale if ex.sale_item else None
@@ -326,15 +338,71 @@ def download_prestations_demain(request):
             statut_cell(sale.payment_status if sale else None),
         ])
 
-    from reportlab.lib.units import cm
+    # ── Section tâches (after_story) ──────────────────────────────────────────
+    task_list = list(tasks)
+    after_story = []
+
+    if task_list:
+        AMBER   = rl_colors.HexColor("#d97706")
+        AMBER_BG = rl_colors.HexColor("#fffbeb")
+        AMBER_HD = rl_colors.HexColor("#92400e")
+
+        section_st = ParagraphStyle("TH", fontName="Helvetica-Bold", fontSize=10,
+                                    textColor=AMBER, spaceBefore=14, spaceAfter=4)
+        after_story.append(RLParagraph(
+            f"Tâches du {tomorrow.strftime('%d/%m/%Y')}  —  {len(task_list)} tâche{'s' if len(task_list) != 1 else ''}",
+            section_st,
+        ))
+
+        task_col_widths = [7*cm, 9*cm, 8.5*cm]
+        task_data = [["Client", "Tâche", "Produits à livrer"]]
+        for task in task_list:
+            prods = ", ".join(
+                f"{tp.product.name} ×{tp.quantity}"
+                for tp in task.task_products.all()
+            ) or "—"
+            task_data.append([
+                task.client.name if task.client else "—",
+                task.title,
+                prods,
+            ])
+
+        n = len(task_data)
+        task_table = Table(task_data, colWidths=task_col_widths, repeatRows=1)
+        task_table.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  rl_colors.HexColor("#1e3a5f")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  rl_colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, 0),  9),
+            ("ALIGN",         (0, 0), (-1, 0),  "CENTER"),
+            ("TOPPADDING",    (0, 0), (-1, 0),  7),
+            ("BOTTOMPADDING", (0, 0), (-1, 0),  7),
+            ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE",      (0, 1), (-1, -1), 8.5),
+            ("TOPPADDING",    (0, 1), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
+            ("ALIGN",         (0, 1), (-1, -1), "LEFT"),
+            *[("BACKGROUND",  (0, i), (-1, i),  AMBER_BG) for i in range(2, n, 2)],
+            ("GRID",          (0, 0), (-1, -1), 0.35, rl_colors.HexColor("#d1d5db")),
+            ("LINEABOVE",     (0, 1), (-1, 1),  1, AMBER),
+        ]))
+        after_story.append(task_table)
+
+    nb_ex = len(rows)
+    nb_tk = len(task_list)
+    subtitle = f"Planning des interventions  —  {nb_ex} prestation{'s' if nb_ex != 1 else ''}"
+    if nb_tk:
+        subtitle += f"  ·  {nb_tk} tâche{'s' if nb_tk != 1 else ''}"
+
     buf = io.BytesIO()
     _build_pdf(
         buf,
         title_text=f"Prestations du {tomorrow.strftime('%d/%m/%Y')}",
-        subtitle_text=f"Planning des interventions  —  {len(rows)} passage{'s' if len(rows) != 1 else ''}",
+        subtitle_text=subtitle,
         col_headers=["Client", "Prestation", "Tour", "Statut paiement"],
         rows=rows,
         col_widths=[7*cm, 9*cm, 4*cm, 4.5*cm],
+        after_story=after_story if after_story else None,
     )
     buf.seek(0)
     response = HttpResponse(buf, content_type="application/pdf")

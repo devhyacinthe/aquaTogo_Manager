@@ -75,13 +75,20 @@
           {{ cell.day }}
           {% endif %}
         </p>
-        {% for ex in cell.executions %}
+        {% for it in cell.items %}
+        {% if it.type == 'execution' %}
         <div class="text-[10px] leading-tight rounded px-1 py-0.5 mb-0.5 truncate
-          {% if ex.is_overdue %}bg-red-100 text-red-700
-          {% elif ex.confirmed %}bg-green-100 text-green-700
+          {% if it.obj.is_overdue %}bg-red-100 text-red-700
+          {% elif it.obj.confirmed %}bg-green-100 text-green-700
           {% else %}bg-brand-50 text-brand-700 group-hover:bg-brand-100{% endif %}">
-          {% if ex.tours_per_month %}<span class="font-bold">T{{ ex.tour_number }}</span> {% endif %}{{ ex.client.name }}
+          {% if it.obj.tours_per_month %}<span class="font-bold">T{{ it.obj.tour_number }}</span> {% endif %}{{ it.obj.client.name }}
         </div>
+        {% else %}
+        <div class="text-[10px] leading-tight rounded px-1 py-0.5 mb-0.5 truncate
+          {% if it.obj.is_overdue %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+          ✓ {{ it.obj.title|truncatechars:12 }}
+        </div>
+        {% endif %}
         {% endfor %}
         {% if cell.extra > 0 %}
         <p class="text-[9px] text-gray-400">+{{ cell.extra }} autre{{ cell.extra|pluralize }}</p>
@@ -103,6 +110,9 @@
     </span>
     <span class="flex items-center gap-1.5">
       <span class="h-3 w-3 rounded-sm bg-green-100 border border-green-200"></span> Confirmée
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="h-3 w-3 rounded-sm bg-amber-100 border border-amber-200"></span> Tâche
     </span>
     <span class="flex items-center gap-1.5">
       <span class="h-3 w-3 rounded-sm bg-red-100 border border-red-200"></span> En retard

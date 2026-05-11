@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import ServiceForm
-from .models import Service, ServiceExecution
+from .models import Service, ServiceExecution, Task, TaskProduct
 
 
 def _assign_tour_numbers(execution_list: list) -> None:
@@ -196,26 +196,43 @@ def execution_list(request):
     today = timezone.now().date()
     periode = request.GET.get("periode", "week")
 
-    qs = (
+    ex_qs = (
         ServiceExecution.objects
         .filter(is_completed=False, next_due_date__isnull=False)
         .select_related("client", "service")
         .order_by("next_due_date")
     )
+    task_qs = (
+        Task.objects
+        .filter(is_completed=False)
+        .select_related("client")
+        .prefetch_related("task_products__product")
+        .order_by("task_date")
+    )
 
     if periode == "today":
-        qs = qs.filter(next_due_date__lte=today)
+        ex_qs   = ex_qs.filter(next_due_date__lte=today)
+        task_qs = task_qs.filter(task_date__lte=today)
     elif periode == "all":
         pass
     else:
         periode = "week"
-        qs = qs.filter(next_due_date__lte=today + timedelta(days=6))
+        ex_qs   = ex_qs.filter(next_due_date__lte=today + timedelta(days=6))
+        task_qs = task_qs.filter(task_date__lte=today + timedelta(days=6))
 
-    executions = list(qs)
+    executions = list(ex_qs)
     _assign_tour_numbers(executions)
 
+    # Liste unifiée triée par date pour l'affichage
+    items = []
+    for ex in executions:
+        items.append({"type": "execution", "obj": ex, "date": ex.next_due_date})
+    for task in task_qs:
+        items.append({"type": "task", "obj": task, "date": task.task_date})
+    items.sort(key=lambda x: x["date"])
+
     context = {
-        "executions": executions,
+        "items": items,
         "today": today,
         "periode": periode,
         "app_name": "services",
@@ -347,9 +364,21 @@ def calendar_week(request):
     )
     _assign_tour_numbers(executions)
 
+    tasks = list(
+        Task.objects
+        .filter(task_date__gte=week_start, task_date__lte=week_end, is_completed=False)
+        .select_related("client")
+        .prefetch_related("task_products__product")
+        .order_by("client__name")
+    )
+
     by_date = defaultdict(list)
     for ex in executions:
         by_date[ex.next_due_date].append(ex)
+
+    tasks_by_date = defaultdict(list)
+    for task in tasks:
+        tasks_by_date[task.task_date].append(task)
 
     week_days = []
     for i in range(7):
@@ -359,6 +388,7 @@ def calendar_week(request):
             "label_short": _DAYS_FR_SHORT[i],
             "label_long": _DAYS_FR_LONG[i],
             "executions": by_date.get(d, []),
+            "tasks": tasks_by_date.get(d, []),
         })
 
     context = {
@@ -389,9 +419,20 @@ def calendar_month(request):
     )
     _assign_tour_numbers(executions)
 
+    tasks = list(
+        Task.objects
+        .filter(task_date__gte=first_day, task_date__lte=last_day, is_completed=False)
+        .select_related("client")
+        .order_by("task_date")
+    )
+
     by_day = defaultdict(list)
     for ex in executions:
         by_day[ex.next_due_date.day].append(ex)
+
+    tasks_by_day = defaultdict(list)
+    for task in tasks:
+        tasks_by_day[task.task_date.day].append(task)
 
     # Build grid: list of weeks, each week = list of 7 cells (None = padding)
     weeks = []
@@ -403,11 +444,17 @@ def calendar_month(request):
             else:
                 d = _date(year, month, day_num)
                 execs = by_day.get(day_num, [])
+                day_tasks = tasks_by_day.get(day_num, [])
+                # Merge for display: prestations d'abord, tâches ensuite
+                all_items = (
+                    [{"type": "execution", "obj": ex} for ex in execs]
+                    + [{"type": "task", "obj": t} for t in day_tasks]
+                )
                 row.append({
                     "date": d,
                     "day": day_num,
-                    "executions": execs[:3],
-                    "extra": max(0, len(execs) - 3),
+                    "items": all_items[:3],
+                    "extra": max(0, len(all_items) - 3),
                 })
         weeks.append(row)
 
@@ -447,10 +494,19 @@ def calendar_day(request):
     )
     _assign_tour_numbers(executions)
 
+    tasks = list(
+        Task.objects
+        .filter(task_date=selected, is_completed=False)
+        .select_related("client")
+        .prefetch_related("task_products__product")
+        .order_by("client__name")
+    )
+
     context = {
         "selected_date": selected,
         "day_label": _DAYS_FR_LONG[selected.weekday()],
         "executions": executions,
+        "tasks": tasks,
         "prev_day": (selected - timedelta(days=1)).isoformat(),
         "next_day": (selected + timedelta(days=1)).isoformat(),
         "today": today,
@@ -536,3 +592,215 @@ def execution_complete(request, pk):
     if next_url:
         return redirect(next_url)
     return redirect("services:execution_list")
+
+
+# ── Tâches ────────────────────────────────────────────────────────────────────
+
+@login_required
+def task_list(request):
+    from clients.models import Client as _Client
+    filtre = request.GET.get("filtre", "pending")
+    client_id = request.GET.get("client", "")
+
+    qs = Task.objects.select_related("client").prefetch_related("task_products__product")
+    if filtre == "done":
+        qs = qs.filter(is_completed=True)
+    elif filtre == "overdue":
+        qs = qs.filter(is_completed=False, task_date__lt=timezone.now().date())
+    else:
+        qs = qs.filter(is_completed=False)
+
+    if client_id:
+        qs = qs.filter(client_id=client_id)
+
+    clients = _Client.objects.filter(is_active=True).order_by("name")
+    counts = {
+        "pending": Task.objects.filter(is_completed=False).count(),
+        "overdue": Task.objects.filter(is_completed=False, task_date__lt=timezone.now().date()).count(),
+        "done":    Task.objects.filter(is_completed=True).count(),
+    }
+    return render(request, "services/task_list.html", {
+        "tasks": qs,
+        "filtre": filtre,
+        "client_filter": client_id,
+        "clients": clients,
+        "counts": counts,
+    })
+
+
+@login_required
+def task_create(request):
+    from clients.models import Client as _Client
+    from products.models import Product as _Product
+
+    clients = _Client.objects.filter(is_active=True).order_by("name")
+    products = _Product.objects.filter(is_active=True).select_related("category").order_by("name")
+
+    if request.method == "POST":
+        title = request.POST.get("title", "").strip()
+        client_id = request.POST.get("client_id", "").strip()
+        task_date = request.POST.get("task_date", "").strip()
+        note = request.POST.get("note", "").strip()
+
+        errors = []
+        if not title:
+            errors.append("Le titre est requis.")
+        if not client_id:
+            errors.append("Le client est requis.")
+        if not task_date:
+            errors.append("La date est requise.")
+
+        client = None
+        if client_id:
+            try:
+                client = _Client.objects.get(pk=int(client_id), is_active=True)
+            except (_Client.DoesNotExist, ValueError):
+                errors.append("Client introuvable.")
+
+        if errors:
+            return render(request, "services/task_form.html", {
+                "clients": clients, "products": products,
+                "errors": errors, "post": request.POST,
+            })
+
+        task = Task.objects.create(
+            title=title, client=client, task_date=task_date, note=note,
+        )
+
+        product_ids = request.POST.getlist("product_id")
+        quantities  = request.POST.getlist("product_qty")
+        for pid, qty_str in zip(product_ids, quantities):
+            try:
+                product = _Product.objects.get(pk=int(pid), is_active=True)
+                qty = max(1, int(qty_str or 1))
+                TaskProduct.objects.create(task=task, product=product, quantity=qty)
+            except (_Product.DoesNotExist, ValueError):
+                pass
+
+        messages.success(request, f"Tâche « {task.title} » créée.")
+        return redirect("services:task_detail", pk=task.pk)
+
+    return render(request, "services/task_form.html", {
+        "clients": clients, "products": products,
+        "today": timezone.now().date().isoformat(),
+    })
+
+
+@login_required
+def task_detail(request, pk):
+    task = get_object_or_404(
+        Task.objects.select_related("client").prefetch_related("task_products__product"),
+        pk=pk,
+    )
+    return render(request, "services/task_detail.html", {"task": task})
+
+
+@login_required
+@require_POST
+def task_complete(request, pk):
+    """Terminer une tâche = créer la vente associée (si produits) + marquer terminée.
+    Réouvrir une tâche déjà terminée = simple bascule sans action commerciale."""
+    from sales.models import Sale, SaleItem
+
+    task = get_object_or_404(
+        Task.objects.select_related("client").prefetch_related("task_products__product"),
+        pk=pk,
+    )
+
+    # ── Réouverture ──────────────────────────────────────────────────────────
+    if task.is_completed:
+        task.is_completed = False
+        task.save(update_fields=["is_completed"])
+        messages.success(request, f"Tâche « {task.title} » réouverte.")
+        return redirect(request.POST.get("next", "services:task_list"))
+
+    # ── Complétion → créer une vente ─────────────────────────────────────────
+    task_products = list(task.task_products.select_related("product").all())
+
+    if not task_products:
+        # Pas de produits : on marque juste comme terminée
+        task.is_completed = True
+        task.save(update_fields=["is_completed"])
+        messages.success(request, f"Tâche « {task.title} » terminée (aucun produit à facturer).")
+        return redirect(request.POST.get("next", "services:task_list"))
+
+    try:
+        with transaction.atomic():
+            sale = Sale.objects.create(
+                client=task.client,
+                created_by=request.user,
+                sale_date=task.task_date,
+            )
+            for tp in task_products:
+                SaleItem.objects.create(
+                    sale=sale,
+                    product=tp.product,
+                    quantity=tp.quantity,
+                    unit_price=tp.product.selling_price,
+                    purchase_price_snapshot=tp.product.purchase_price,
+                )
+            sale.recompute_totals()
+            task.is_completed = True
+            task.save(update_fields=["is_completed"])
+    except ValueError as e:
+        messages.error(request, str(e))
+        return redirect("services:task_detail", pk=pk)
+
+    nb = len(task_products)
+    messages.success(
+        request,
+        f"Tâche « {task.title} » terminée — vente créée ({nb} produit{'s' if nb > 1 else ''}).",
+    )
+    return redirect("sales:detail", pk=sale.pk)
+
+
+@login_required
+@require_POST
+def task_delete(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    title = task.title
+    task.delete()
+    messages.success(request, f"Tâche « {title} » supprimée.")
+    return redirect("services:task_list")
+
+
+@login_required
+@require_POST
+def task_to_sale(request, pk):
+    """Convertit une tâche en vente : crée la vente + lignes produits, marque la tâche terminée."""
+    from sales.models import Sale, SaleItem
+
+    task = get_object_or_404(
+        Task.objects.select_related("client").prefetch_related("task_products__product"),
+        pk=pk,
+    )
+
+    try:
+        with transaction.atomic():
+            sale = Sale.objects.create(
+                client=task.client,
+                created_by=request.user,
+                sale_date=task.task_date,
+            )
+            for tp in task.task_products.select_related("product").all():
+                SaleItem.objects.create(
+                    sale=sale,
+                    product=tp.product,
+                    quantity=tp.quantity,
+                    unit_price=tp.product.selling_price,
+                    purchase_price_snapshot=tp.product.purchase_price,
+                )
+            sale.recompute_totals()
+            task.is_completed = True
+            task.save(update_fields=["is_completed"])
+    except ValueError as e:
+        messages.error(request, str(e))
+        return redirect("services:task_detail", pk=pk)
+
+    nb = task.task_products.count()
+    msg = (
+        f"Vente créée depuis la tâche « {task.title} »"
+        + (f" ({nb} produit{'s' if nb > 1 else ''})." if nb else " (sans produit — ajoutez les articles manuellement).")
+    )
+    messages.success(request, msg)
+    return redirect("sales:detail", pk=sale.pk)

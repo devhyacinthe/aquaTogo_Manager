@@ -40,15 +40,15 @@ class Client(models.Model):
 
     @property
     def total_purchases(self) -> Decimal:
-        """Montant total facturé à ce client (toutes ventes confondues)."""
-        result = self.sales.aggregate(total=models.Sum("total_amount"))
+        """Montant total facturé à ce client (ventes actives uniquement)."""
+        result = self.sales.filter(status="active").aggregate(total=models.Sum("total_amount"))
         return result["total"] or Decimal("0.00")
 
     @property
     def total_paid(self) -> Decimal:
-        """Montant total effectivement encaissé sur toutes ses ventes."""
+        """Montant total effectivement encaissé sur les ventes actives."""
         from django.db.models import Sum
-        result = self.sales.aggregate(
+        result = self.sales.filter(status="active").aggregate(
             total=Sum("payments__amount")
         )
         return result["total"] or Decimal("0.00")

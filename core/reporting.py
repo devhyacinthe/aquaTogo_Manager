@@ -65,27 +65,42 @@ def generate_sales_report() -> str:
 
 
 def generate_services_report() -> str:
-    """Rappel des prestations prévues pour demain."""
-    from services.models import ServiceExecution
+    """Rappel des prestations et tâches prévues pour demain."""
+    from services.models import ServiceExecution, Task
 
     today = timezone.now().date()
     tomorrow = today + timedelta(days=1)
 
     services_tomorrow = list(
         ServiceExecution.objects.filter(
-            next_due_date=tomorrow,
-            is_completed=False,
+            next_due_date=tomorrow, is_completed=False,
         ).select_related("client", "service")
+    )
+    tasks_tomorrow = list(
+        Task.objects.filter(
+            task_date=tomorrow, is_completed=False,
+        ).select_related("client").prefetch_related("task_products__product")
     )
 
     tomorrow_fr = tomorrow.strftime("%d/%m/%Y")
-    lines = [f"🔧 <b>Prestations du {tomorrow_fr}</b>", ""]
+    lines = [f"🔧 <b>Planning du {tomorrow_fr}</b>", ""]
 
     if services_tomorrow:
+        lines.append("Prestations :")
         for s in services_tomorrow:
             lines.append(f"  • {s.service.name} — {s.client.name}")
     else:
         lines.append("Aucune prestation prévue.")
+
+    if tasks_tomorrow:
+        lines.append("")
+        lines.append("✅ Tâches :")
+        for t in tasks_tomorrow:
+            prods = ", ".join(
+                f"{tp.product.name}×{tp.quantity}" for tp in t.task_products.all()
+            )
+            detail = f" ({prods})" if prods else ""
+            lines.append(f"  • {t.title} — {t.client.name}{detail}")
 
     return "\n".join(lines)
 

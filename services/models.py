@@ -1,5 +1,5 @@
 from django.db import models
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
@@ -180,3 +180,62 @@ class ServiceExecution(models.Model):
             4: "4 tours/mois — toutes les semaines",
         }
         return labels[self.tours_per_month]
+
+
+# ── Tâches ────────────────────────────────────────────────────────────────────
+
+class Task(models.Model):
+    """Tâche / intervention planifiée (livraison, pose, entretien ponctuel…)."""
+
+    title = models.CharField(max_length=255, verbose_name="Titre")
+    client = models.ForeignKey(
+        "clients.Client",
+        on_delete=models.CASCADE,
+        related_name="tasks",
+        verbose_name="Client",
+    )
+    task_date = models.DateField(verbose_name="Date prévue")
+    note = models.TextField(blank=True, verbose_name="Notes")
+    is_completed = models.BooleanField(default=False, verbose_name="Terminée")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Tâche"
+        verbose_name_plural = "Tâches"
+        ordering = ["task_date"]
+        indexes = [
+            models.Index(fields=["task_date"],    name="task_date_idx"),
+            models.Index(fields=["is_completed"], name="task_completed_idx"),
+            models.Index(fields=["client"],       name="task_client_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.title} — {self.client.name} ({self.task_date})"
+
+    @property
+    def is_overdue(self) -> bool:
+        return not self.is_completed and self.task_date < timezone.now().date()
+
+
+class TaskProduct(models.Model):
+    """Produit à livrer / utiliser lors d'une tâche."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="task_products")
+    product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.PROTECT,
+        related_name="task_products",
+    )
+    quantity = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1)],
+        verbose_name="Quantité",
+    )
+
+    class Meta:
+        verbose_name = "Produit de tâche"
+        verbose_name_plural = "Produits de tâche"
+        unique_together = [("task", "product")]
+
+    def __str__(self):
+        return f"{self.product.name} × {self.quantity}"

@@ -17,4 +17,11 @@ urlpatterns = [
     path("executions/calendrier/mois/", views.calendar_month, name="calendar_month"),
     path("executions/calendrier/jour/", views.calendar_day, name="calendar_day"),
     path("<int:service_pk>/executer/", views.record_execution, name="record_execution"),
+    # Tâches
+    path("taches/", views.task_list, name="task_list"),
+    path("taches/nouvelle/", views.task_create, name="task_create"),
+    path("taches/<int:pk>/", views.task_detail, name="task_detail"),
+    path("taches/<int:pk>/completer/", views.task_complete, name="task_complete"),
+    path("taches/<int:pk>/supprimer/", views.task_delete, name="task_delete"),
+    path("taches/<int:pk>/vente/",     views.task_to_sale, name="task_to_sale"),
 ]

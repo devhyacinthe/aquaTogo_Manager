@@ -2,7 +2,9 @@ import json as _json
 from datetime import date
 from decimal import Decimal
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -213,6 +215,141 @@ def quote_convert(request, pk):
     return redirect("sales:detail", pk=sale.pk)
 
 
+# ── quote_edit ────────────────────────────────────────────────────────────
+
+@login_required
+def quote_edit(request, pk):
+    quote = get_object_or_404(Quote, pk=pk)
+    if quote.status == Quote.Status.CONVERTED:
+        messages.error(request, "Un devis converti ne peut pas être modifié.")
+        return redirect("devis:detail", pk=pk)
+
+    products = Product.objects.filter(is_active=True).select_related("category").order_by("name")
+    services = Service.objects.filter(is_active=True).order_by("name")
+
+    products_data = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "category": p.category.name,
+            "category_key": p.category.slug,
+            "selling_price": str(p.selling_price),
+            "wholesale_price": str(p.wholesale_price) if p.wholesale_price is not None else None,
+            "purchase_price": str(p.purchase_price),
+            "stock_quantity": p.stock_quantity,
+            "is_out_of_stock": p.is_out_of_stock,
+        }
+        for p in products
+    ]
+    services_data = [
+        {"id": s.id, "name": s.name, "price": str(s.price)}
+        for s in services
+    ]
+
+    if request.method == "POST":
+        cart_raw = request.POST.get("cart_data", "")
+        client_id = request.POST.get("client_id", "").strip()
+        valid_until = request.POST.get("valid_until", "").strip() or None
+        note = request.POST.get("note", "").strip()
+
+        try:
+            cart = _json.loads(cart_raw) if cart_raw else []
+        except _json.JSONDecodeError:
+            cart = []
+
+        if not cart:
+            return render(request, "devis/create.html", {
+                "editing_quote": quote,
+                "products_data": products_data,
+                "services_data": services_data,
+                "error": "Le devis est vide.",
+                "today": date.today().isoformat(),
+            })
+
+        client = None
+        if client_id:
+            try:
+                client = Client.objects.get(pk=int(client_id), is_active=True)
+            except (Client.DoesNotExist, ValueError):
+                pass
+
+        with transaction.atomic():
+            quote.client = client
+            quote.valid_until = valid_until
+            quote.note = note
+            quote.save(update_fields=["client", "valid_until", "note"])
+
+            quote.items.all().delete()
+            total = Decimal("0.00")
+            for item in cart:
+                try:
+                    unit_price = _parse_decimal(item.get("unit_price"))
+                    qty = int(item.get("qty", 1))
+                except (ValueError, TypeError):
+                    continue
+                product = service = None
+                label = item.get("name", "Article")
+                if item.get("type") == "product":
+                    product = Product.objects.filter(pk=item.get("id")).first()
+                elif item.get("type") == "service":
+                    service = Service.objects.filter(pk=item.get("id")).first()
+                QuoteItem.objects.create(
+                    quote=quote, product=product, service=service,
+                    label=label, unit_price=unit_price, quantity=qty,
+                )
+                total += unit_price * qty
+
+            quote.total_amount = total
+            quote.save(update_fields=["total_amount"])
+
+        messages.success(request, f"Devis #{quote.pk:04d} mis à jour.")
+        return redirect("devis:detail", pk=pk)
+
+    # Pré-remplir le panier depuis les articles existants
+    initial_cart = [
+        {
+            "type": "product" if item.product_id else ("service" if item.service_id else "custom"),
+            "id": item.product_id or item.service_id,
+            "name": item.label,
+            "unit_price": str(item.unit_price),
+            "purchase_price": str(item.product.purchase_price) if item.product else "0",
+            "qty": item.quantity,
+        }
+        for item in quote.items.select_related("product", "service").all()
+    ]
+    initial_client = None
+    if quote.client:
+        initial_client = {
+            "id": quote.client.id,
+            "name": quote.client.name,
+            "phone": quote.client.phone or "",
+        }
+
+    return render(request, "devis/create.html", {
+        "editing_quote": quote,
+        "products_data": products_data,
+        "services_data": services_data,
+        "initial_cart": initial_cart,
+        "initial_client": initial_client,
+        "today": date.today().isoformat(),
+    })
+
+
+# ── quote_delete ──────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def quote_delete(request, pk):
+    quote = get_object_or_404(Quote, pk=pk)
+    if quote.status == Quote.Status.CONVERTED:
+        messages.error(request, "Un devis converti en vente ne peut pas être supprimé.")
+        return redirect("devis:detail", pk=pk)
+    num = f"#{pk:04d}"
+    quote.delete()
+    messages.success(request, f"Devis {num} supprimé.")
+    return redirect("devis:list")
+
+
 # ── quote_pdf ─────────────────────────────────────────────────────────────────
 
 @login_required
@@ -371,7 +508,7 @@ def quote_pdf(request, pk):
     if quote.client:
         unpaid_sales = list(
             quote.client.sales
-            .filter(payment_status__in=["unpaid", "partial"])
+            .filter(status="active", payment_status__in=["unpaid", "partial"])
             .order_by("sale_date")
         )
         outstanding = quote.client.outstanding_balance
