@@ -85,6 +85,7 @@ class QuoteItem(models.Model):
     class Meta:
         verbose_name = "Ligne de devis"
         verbose_name_plural = "Lignes de devis"
+        ordering = ["id"]
 
     def __str__(self):
         return f"{self.label} × {self.quantity}"

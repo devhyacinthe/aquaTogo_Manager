@@ -87,18 +87,18 @@
 
       <div class="space-y-2">
         <template x-for="(row, i) in rows" :key="i">
-          <div class="flex gap-2 items-center">
+          <div class="grid items-center gap-2" style="grid-template-columns: 1fr 3.5rem 2rem">
             <select :name="'product_id'" x-model="row.product_id"
-                    class="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none transition-colors">
+                    class="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none transition-colors">
               <option value="">-- Produit --</option>
               {% for p in products %}
               <option value="{{ p.pk }}">{{ p.name }}{% if p.is_out_of_stock %} (rupture){% endif %}</option>
               {% endfor %}
             </select>
             <input type="number" :name="'product_qty'" x-model.number="row.qty" min="1"
-                   class="w-20 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-center focus:border-brand-400 focus:outline-none transition-colors">
+                   class="w-full rounded-xl border border-gray-200 bg-gray-50 px-2 py-2 text-sm text-center focus:border-brand-400 focus:outline-none transition-colors">
             <button type="button" @click="removeRow(i)"
-                    class="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
+                    class="flex items-center justify-center p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
               <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
               </svg>
