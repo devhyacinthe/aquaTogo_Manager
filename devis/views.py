@@ -179,38 +179,73 @@ def quote_update_status(request, pk):
 def quote_convert(request, pk):
     from django.db import transaction
     from sales.models import Sale, SaleItem
+    from services.models import ServiceExecution
 
     quote = get_object_or_404(Quote, pk=pk)
     if quote.status == Quote.Status.CONVERTED:
         return redirect("devis:detail", pk=pk)
 
-    with transaction.atomic():
-        sale = Sale.objects.create(
-            client=quote.client,
-            created_by=request.user,
-            sale_date=date.today(),
-        )
-        for item in quote.items.select_related("product", "service").all():
-            purchase_price = Decimal("0.00")
-            if item.product:
-                purchase_price = item.product.purchase_price
-
-            si = SaleItem(
-                sale=sale,
-                product=item.product,
-                service=item.service,
-                label=item.label,
-                quantity=item.quantity,
-                unit_price=item.unit_price,
-                purchase_price_snapshot=purchase_price,
+    try:
+        with transaction.atomic():
+            sale = Sale.objects.create(
+                client=quote.client,
+                created_by=request.user,
+                sale_date=date.today(),
             )
-            # call save() directly so stock is decremented
-            si.save()
 
-        sale.recompute_totals()
-        quote.status = Quote.Status.CONVERTED
-        quote.converted_sale = sale
-        quote.save(update_fields=["status", "converted_sale"])
+            for item in quote.items.select_related("product", "service").all():
+                purchase_price = Decimal("0.00")
+
+                if item.product:
+                    # Verrou pour éviter les conflits de stock concurrents
+                    product = Product.objects.select_for_update().get(pk=item.product_id)
+                    purchase_price = product.purchase_price
+                    si = SaleItem.objects.create(
+                        sale=sale,
+                        product=product,
+                        label=item.label,
+                        quantity=item.quantity,
+                        unit_price=item.unit_price,
+                        purchase_price_snapshot=purchase_price,
+                    )
+                elif item.service:
+                    si = SaleItem.objects.create(
+                        sale=sale,
+                        service=item.service,
+                        label=item.label,
+                        quantity=item.quantity,
+                        unit_price=item.unit_price,
+                        purchase_price_snapshot=Decimal("0.00"),
+                    )
+                    # Créer l'exécution de prestation (pour le calendrier / suivi)
+                    if sale.client:
+                        ServiceExecution.objects.create(
+                            client=sale.client,
+                            service=item.service,
+                            sale_item=si,
+                            execution_date=date.today(),
+                            next_due_date=date.today(),
+                        )
+                else:
+                    # Article libre (label uniquement)
+                    SaleItem.objects.create(
+                        sale=sale,
+                        label=item.label,
+                        quantity=item.quantity,
+                        unit_price=item.unit_price,
+                        purchase_price_snapshot=Decimal("0.00"),
+                    )
+
+            sale.recompute_totals()
+            sale.update_payment_status()
+
+            quote.status = Quote.Status.CONVERTED
+            quote.converted_sale = sale
+            quote.save(update_fields=["status", "converted_sale"])
+
+    except ValueError as e:
+        messages.error(request, str(e))
+        return redirect("devis:detail", pk=pk)
 
     return redirect("sales:detail", pk=sale.pk)
 

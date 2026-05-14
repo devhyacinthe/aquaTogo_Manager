@@ -6,7 +6,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q, Sum, Value, DecimalField, F, ExpressionWrapper
+from django.db.models import Q, Sum, Value, DecimalField, F, ExpressionWrapper, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 
@@ -15,22 +15,39 @@ from .forms import ClientForm
 
 
 def _annotate_clients(qs):
-    """Annotate a Client queryset with ann_total, ann_paid, ann_balance."""
+    """Annotate a Client queryset with ann_total, ann_paid, ann_balance.
+
+    Uses subqueries instead of multi-table JOINs to avoid the SUM(DISTINCT)
+    deduplication bug (two sales with the same amount would only be counted once).
+    Also excludes canceled sales.
+    """
+    from sales.models import Sale, Payment
+
+    _zero = Value(Decimal("0.00"), output_field=DecimalField(max_digits=14, decimal_places=2))
+    _df   = DecimalField(max_digits=14, decimal_places=2)
+
+    total_sq = (
+        Sale.objects
+        .filter(client=OuterRef("pk"), status="active")
+        .values("client")
+        .annotate(t=Sum("total_amount"))
+        .values("t")
+    )
+    paid_sq = (
+        Payment.objects
+        .filter(sale__client=OuterRef("pk"), sale__status="active")
+        .values("sale__client")
+        .annotate(p=Sum("amount"))
+        .values("p")
+    )
+
     return qs.annotate(
-        ann_total=Coalesce(
-            Sum("sales__total_amount", distinct=True),
-            Value(Decimal("0.00")),
-            output_field=DecimalField(max_digits=14, decimal_places=2),
-        ),
-        ann_paid=Coalesce(
-            Sum("sales__payments__amount"),
-            Value(Decimal("0.00")),
-            output_field=DecimalField(max_digits=14, decimal_places=2),
-        ),
+        ann_total=Coalesce(Subquery(total_sq, output_field=_df), _zero, output_field=_df),
+        ann_paid =Coalesce(Subquery(paid_sq,  output_field=_df), _zero, output_field=_df),
     ).annotate(
         ann_balance=ExpressionWrapper(
             F("ann_total") - F("ann_paid"),
-            output_field=DecimalField(max_digits=14, decimal_places=2),
+            output_field=_df,
         )
     )
 

@@ -870,7 +870,7 @@ def sale_invoice_pdf(request, pk):
         _p("<b>Total (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
     ]]
     for item in items:
-        name = item.product.name if item.product else (item.service.name if item.service else "—")
+        name = item.product.name if item.product else (item.service.name if item.service else (item.label or "—"))
         rows.append([
             _p(name, fontSize=9),
             _p(str(item.quantity), fontSize=9, alignment=TA_RIGHT),
@@ -898,8 +898,10 @@ def sale_invoice_pdf(request, pk):
     story.append(at)
     story.append(Spacer(1, 0.6 * cm))
 
-    # ── Paiements ─────────────────────────────────────────────────────────────
-    if payments:
+    # ── Paiements + Solde dû ──────────────────────────────────────────────────
+    # Afficher la section dès qu'il y a des paiements OU un solde restant dû
+    remaining = sale.remaining_balance
+    if payments or remaining > 0:
         story.append(_p("<b>Paiements reçus</b>", fontSize=10))
         story.append(Spacer(1, 0.25 * cm))
 
@@ -914,35 +916,47 @@ def sale_invoice_pdf(request, pk):
                 _p(p.get_payment_method_display(), fontSize=9),
                 _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
             ])
-        if sale.remaining_balance > 0:
+
+        if remaining > 0:
+            label = "<b>Solde dû</b>" if not payments else "<b>Reste à payer</b>"
             pay_rows.append([
                 "",
-                _p("<b>Reste à payer</b>", fontSize=9),
-                _p(f'<font color="#DC2626"><b>{_fmt(sale.remaining_balance)} FCFA</b></font>',
+                _p(label, fontSize=9),
+                _p(f'<font color="#DC2626"><b>{_fmt(remaining)} FCFA</b></font>',
                    fontSize=9, alignment=TA_RIGHT),
             ])
 
+        n_rows = len(pay_rows)
         pt = Table(pay_rows, colWidths=[4 * cm, 7 * cm, 4 * cm])
-        pt.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("ALIGN", (2, 0), (2, -1), "RIGHT"),
-        ]))
+        ts = [
+            ("BACKGROUND",    (0, 0),  (-1, 0),       colors.HexColor("#F1F5F9")),
+            ("FONTNAME",      (0, 0),  (-1, 0),       "Helvetica-Bold"),
+            ("ROWBACKGROUNDS",(0, 1),  (-1, -1),      [colors.white, colors.HexColor("#F8FAFC")]),
+            ("TOPPADDING",    (0, 0),  (-1, -1),      5),
+            ("BOTTOMPADDING", (0, 0),  (-1, -1),      5),
+            ("LEFTPADDING",   (0, 0),  (-1, -1),      8),
+            ("RIGHTPADDING",  (0, 0),  (-1, -1),      8),
+            ("ALIGN",         (2, 0),  (2, -1),       "RIGHT"),
+        ]
+        # Ligne "Solde dû" / "Reste à payer" : fond rouge clair
+        if remaining > 0:
+            ts += [
+                ("BACKGROUND",    (0, n_rows - 1), (-1, n_rows - 1), colors.HexColor("#FEF2F2")),
+                ("LINEABOVE",     (0, n_rows - 1), (-1, n_rows - 1), 0.5, colors.HexColor("#FCA5A5")),
+            ]
+        pt.setStyle(TableStyle(ts))
         story.append(pt)
 
     # ── Historique des impayés du client ──────────────────────────────────────
     if sale.client:
         unpaid_sales = list(
             sale.client.sales
-            .filter(payment_status__in=["unpaid", "partial"])
+            .filter(status="active", payment_status__in=["unpaid", "partial"])
+            .prefetch_related("payments")
             .order_by("sale_date")
         )
-        outstanding = sale.client.outstanding_balance
+        # Total calculé depuis les lignes affichées (cohérence garantie)
+        outstanding = sum(s.remaining_balance for s in unpaid_sales)
         if outstanding > 0 and unpaid_sales:
             story.append(Spacer(1, 0.5 * cm))
             story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))

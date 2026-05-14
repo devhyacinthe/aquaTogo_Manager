@@ -726,20 +726,24 @@ def task_complete(request, pk):
 
     try:
         with transaction.atomic():
+            from products.models import Product as _Product
             sale = Sale.objects.create(
                 client=task.client,
                 created_by=request.user,
-                sale_date=task.task_date,
+                sale_date=_date.today(),  # date d'enregistrement, pas date planifiée
             )
             for tp in task_products:
+                # Verrou pour éviter les conflits de stock concurrents
+                product = _Product.objects.select_for_update().get(pk=tp.product_id)
                 SaleItem.objects.create(
                     sale=sale,
-                    product=tp.product,
+                    product=product,
                     quantity=tp.quantity,
-                    unit_price=tp.product.selling_price,
-                    purchase_price_snapshot=tp.product.purchase_price,
+                    unit_price=product.selling_price,
+                    purchase_price_snapshot=product.purchase_price,
                 )
             sale.recompute_totals()
+            sale.update_payment_status()
             task.is_completed = True
             task.save(update_fields=["is_completed"])
     except ValueError as e:
