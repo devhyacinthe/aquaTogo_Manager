@@ -8,6 +8,7 @@ urlpatterns = [
     path("nouveau/", views.client_create, name="create"),
     path("<int:pk>/", views.client_detail, name="detail"),
     path("<int:pk>/modifier/", views.client_edit, name="edit"),
+    path("<int:pk>/facture.pdf", views.client_invoice_pdf, name="invoice_pdf"),
     path("<int:pk>/solder/", views.client_settle_debt, name="settle_debt"),
     path("<int:pk>/supprimer/", views.client_delete, name="delete"),
 ]

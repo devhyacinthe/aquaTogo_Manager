@@ -947,10 +947,11 @@ def sale_invoice_pdf(request, pk):
     story.append(at)
     story.append(Spacer(1, 0.6 * cm))
 
-    # ── Paiements + Solde dû ──────────────────────────────────────────────────
-    # Afficher la section dès qu'il y a des paiements OU un solde restant dû
+    # ── Solde dû (affiché sous le total quand impayé sans paiement) ───────────
     remaining = sale.remaining_balance
-    if payments or remaining > 0:
+
+    # ── Paiements reçus (seulement s'il y a au moins un paiement) ─────────────
+    if payments:
         story.append(_p("<b>Paiements reçus</b>", fontSize=10))
         story.append(Spacer(1, 0.25 * cm))
 
@@ -966,20 +967,18 @@ def sale_invoice_pdf(request, pk):
                 _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
             ])
 
-        # Résumé payé / reste
-        total_paid = sale.total_amount - remaining
+        # Résumé payé / reste si paiement partiel
         if remaining > 0:
-            # Ligne total payé
+            total_paid = sale.total_amount - remaining
             pay_rows.append([
                 "",
                 _p("<b>Total payé</b>", fontSize=9, alignment=TA_RIGHT),
                 _p(f'<font color="#15803D"><b>{_fmt(total_paid)} FCFA</b></font>',
                    fontSize=9, alignment=TA_RIGHT),
             ])
-            label = "<b>Solde dû</b>" if not payments else "<b>Reste à payer</b>"
             pay_rows.append([
                 "",
-                _p(label, fontSize=9, alignment=TA_RIGHT),
+                _p("<b>Reste à payer</b>", fontSize=9, alignment=TA_RIGHT),
                 _p(f'<font color="#DC2626"><b>{_fmt(remaining)} FCFA</b></font>',
                    fontSize=9, alignment=TA_RIGHT),
             ])
@@ -996,7 +995,6 @@ def sale_invoice_pdf(request, pk):
             ("RIGHTPADDING",  (0, 0),  (-1, -1),      8),
             ("ALIGN",         (2, 0),  (2, -1),       "RIGHT"),
         ]
-        # Ligne "Solde dû" / "Reste à payer" : fond rouge clair
         if remaining > 0:
             ts += [
                 ("BACKGROUND",    (0, n_rows - 1), (-1, n_rows - 1), colors.HexColor("#FEF2F2")),
@@ -1013,7 +1011,6 @@ def sale_invoice_pdf(request, pk):
             .prefetch_related("payments")
             .order_by("sale_date")
         )
-        # Total calculé depuis les lignes affichées (cohérence garantie)
         outstanding = sum(s.remaining_balance for s in unpaid_sales)
         if outstanding > 0 and unpaid_sales:
             story.append(Spacer(1, 0.5 * cm))
@@ -1041,7 +1038,6 @@ def sale_invoice_pdf(request, pk):
                 label = f"N° {s.pk:04d}"
                 if s.pk == sale.pk:
                     label += "  ← présente facture"
-                # Statut par facture
                 if s.payment_status == "partial":
                     label += " (Partiel)"
                 debt_rows.append([
@@ -1081,34 +1077,26 @@ def sale_invoice_pdf(request, pk):
     story.append(_p("AquaTogo — Merci pour votre confiance !",
                     fontSize=8, textColor=gray, alignment=TA_CENTER))
 
-    # ── Tampon visuel selon le statut ─────────────────────────────────────────
-    def _draw_stamp(canvas, doc, text, stamp_color):
-        canvas.saveState()
-        canvas.setFillAlpha(0.25)
-        canvas.setStrokeAlpha(0.25)
-        c = colors.HexColor(stamp_color)
-        canvas.setFillColor(c)
-        canvas.setStrokeColor(c)
-        canvas.setLineWidth(5)
-        canvas.setFont("Helvetica-Bold", 52)
-        w, h = A4
-        canvas.translate(w / 2, h / 2)
-        canvas.rotate(42)
-        tw = canvas.stringWidth(text, "Helvetica-Bold", 52)
-        rx = max(tw / 2 + 20, 108)
-        canvas.roundRect(-rx, -36, rx * 2, 72, 10, fill=0, stroke=1)
-        canvas.drawCentredString(0, -18, text)
-        canvas.restoreState()
-
+    # ── Tampon visuel (uniquement pour les factures payées) ────────────────────
     if sale.payment_status == "paid":
-        stamp_fn = lambda c, d: _draw_stamp(c, d, "PAYÉ", "#15803D")
-        doc.build(story, onFirstPage=stamp_fn, onLaterPages=stamp_fn)
-    elif sale.payment_status == "partial":
-        stamp_fn = lambda c, d: _draw_stamp(c, d, "PARTIEL", "#D97706")
-        doc.build(story, onFirstPage=stamp_fn, onLaterPages=stamp_fn)
+        def _draw_paid_stamp(canvas, doc):
+            canvas.saveState()
+            canvas.setFillAlpha(0.25)
+            canvas.setStrokeAlpha(0.25)
+            stamp_green = colors.HexColor("#15803D")
+            canvas.setFillColor(stamp_green)
+            canvas.setStrokeColor(stamp_green)
+            canvas.setLineWidth(5)
+            canvas.setFont("Helvetica-Bold", 62)
+            w, h = A4
+            canvas.translate(w / 2, h / 2)
+            canvas.rotate(42)
+            canvas.roundRect(-108, -36, 216, 72, 10, fill=0, stroke=1)
+            canvas.drawCentredString(0, -22, "PAYÉ")
+            canvas.restoreState()
+        doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)
     else:
-        stamp_fn = lambda c, d: _draw_stamp(c, d, "IMPAYÉ", "#DC2626")
-        doc.build(story, onFirstPage=stamp_fn, onLaterPages=stamp_fn)
+        doc.build(story)
     buffer.seek(0)
 
     filename = f"Facture_AquaTogo_{sale.pk:04d}_{sale.sale_date.strftime('%Y%m%d')}.pdf"

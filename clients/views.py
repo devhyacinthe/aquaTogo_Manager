@@ -256,3 +256,257 @@ def client_edit(request, pk):
         "app_name": "clients",
     }
     return render(request, "clients/form.html", context)
+
+
+# ── client_invoice_pdf ────────────────────────────────────────────────────────
+
+@login_required
+def client_invoice_pdf(request, pk):
+    """Facture consolidée : toutes les ventes actives d'un client."""
+    import os
+    from io import BytesIO
+    from django.conf import settings
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image,
+    )
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+    from sales.models import Sale, Payment
+
+    client = get_object_or_404(Client, pk=pk)
+    sales = list(
+        client.sales
+        .filter(status="active")
+        .prefetch_related("items__product", "items__service", "payments")
+        .order_by("sale_date", "id")
+    )
+    if not sales:
+        messages.info(request, "Aucune vente active pour ce client.")
+        return redirect("clients:detail", pk=pk)
+
+    # Agrégats
+    grand_total = sum(s.total_amount for s in sales)
+    all_payments = []
+    for s in sales:
+        all_payments.extend(list(s.payments.all()))
+    all_payments.sort(key=lambda p: (p.payment_date, p.pk))
+    total_paid = sum(p.amount for p in all_payments)
+    remaining = grand_total - total_paid
+
+    # Statut global
+    if remaining <= 0:
+        global_status = "paid"
+    elif total_paid > 0:
+        global_status = "partial"
+    else:
+        global_status = "unpaid"
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+        leftMargin=2.5 * cm,
+        rightMargin=2.5 * cm,
+    )
+
+    brand = colors.HexColor("#0EA5E9")
+    gray  = colors.HexColor("#6B7280")
+    light = colors.HexColor("#F0F9FF")
+
+    def _p(text, **kw):
+        return Paragraph(text, ParagraphStyle("_", **kw))
+
+    def _fmt(n):
+        return f"{n:,.0f}".replace(",", "\u202f")
+
+    story = []
+
+    # ── En-tête boutique ──────────────────────────────────────────────────────
+    logo_path = os.path.join(settings.BASE_DIR, "static", "img", "logo.png")
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=1.4 * cm, height=1.4 * cm)
+        name_cell = _p(
+            '<font size="18" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="9" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+        left_col = Table([[logo_cell, name_cell]], colWidths=[1.6 * cm, 8 * cm])
+        left_col.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (1, 0), (1, 0), 6)]))
+    else:
+        left_col = _p(
+            '<font size="18" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="9" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+
+    header_data = [[
+        left_col,
+        _p(f'<font size="9" color="#6B7280">Date : {_date.today().strftime("%d/%m/%Y")}</font>',
+           alignment=TA_RIGHT),
+    ]]
+    ht = Table(header_data, colWidths=[10 * cm, 7.5 * cm])
+    ht.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    story.append(ht)
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=brand))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Titre + Client ────────────────────────────────────────────────────────
+    status_colors = {"paid": "#15803D", "partial": "#D97706", "unpaid": "#DC2626"}
+    status_labels = {"paid": "PAYÉ", "partial": "PARTIELLEMENT PAYÉ", "unpaid": "IMPAYÉ"}
+    s_color = status_colors.get(global_status, "#374151")
+    s_label = status_labels.get(global_status, "")
+
+    client_phone = client.phone or ""
+    info_data = [[
+        _p(f'<font size="14"><b>FACTURE CLIENT</b></font><br/>'
+           f'<font size="9" color="{s_color}"><b>● {s_label}</b></font>'),
+        _p(f'<b>{client.name}</b>'
+           + (f'<br/><font size="9" color="#6B7280">Tél : {client_phone}</font>' if client_phone else "")),
+    ]]
+    it = Table(info_data, colWidths=[9 * cm, 8.5 * cm])
+    it.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (1, 0), (1, 0), light),
+        ("LEFTPADDING", (1, 0), (1, 0), 10),
+        ("TOPPADDING", (1, 0), (1, 0), 8),
+        ("BOTTOMPADDING", (1, 0), (1, 0), 8),
+        ("RIGHTPADDING", (1, 0), (1, 0), 10),
+    ]))
+    story.append(it)
+    story.append(Spacer(1, 0.7 * cm))
+
+    # ── Tableau de tous les articles ──────────────────────────────────────────
+    rows = [[
+        _p("<b>Article</b>", fontSize=9),
+        _p("<b>Vente</b>", fontSize=9),
+        _p("<b>Qté</b>", fontSize=9, alignment=TA_RIGHT),
+        _p("<b>Prix unit.</b>", fontSize=9, alignment=TA_RIGHT),
+        _p("<b>Total (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+    ]]
+    for sale in sales:
+        for item in sale.items.all():
+            name = (item.product.name if item.product
+                    else (item.service.name if item.service
+                          else (item.label or "—")))
+            rows.append([
+                _p(name, fontSize=9),
+                _p(f"#{sale.pk:04d}", fontSize=8, textColor=gray),
+                _p(str(item.quantity), fontSize=9, alignment=TA_RIGHT),
+                _p(_fmt(item.unit_price), fontSize=9, alignment=TA_RIGHT),
+                _p(_fmt(item.line_total), fontSize=9, alignment=TA_RIGHT),
+            ])
+
+    # Ligne Total
+    rows.append([
+        "", "", "",
+        _p("<b>TOTAL</b>", fontSize=10, alignment=TA_RIGHT),
+        _p(f"<b>{_fmt(grand_total)} FCFA</b>", fontSize=10, alignment=TA_RIGHT),
+    ])
+
+    at = Table(rows, colWidths=[6.5 * cm, 2 * cm, 2 * cm, 3.5 * cm, 3.5 * cm])
+    at.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), brand),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -2), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("BACKGROUND",    (0, -1), (-1, -1), light),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    story.append(at)
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Paiements reçus ──────────────────────────────────────────────────────
+    if all_payments:
+        story.append(_p("<b>Paiements reçus</b>", fontSize=10))
+        story.append(Spacer(1, 0.25 * cm))
+
+        pay_rows = [[
+            _p("<b>Date</b>", fontSize=9),
+            _p("<b>Méthode</b>", fontSize=9),
+            _p("<b>Vente</b>", fontSize=9),
+            _p("<b>Montant (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+        ]]
+        for p in all_payments:
+            pay_rows.append([
+                _p(p.payment_date.strftime("%d/%m/%Y"), fontSize=9),
+                _p(p.get_payment_method_display(), fontSize=9),
+                _p(f"#{p.sale.pk:04d}", fontSize=8, textColor=gray),
+                _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
+            ])
+
+        # Résumé
+        if remaining > 0:
+            pay_rows.append([
+                "", "",
+                _p("<b>Total payé</b>", fontSize=9, alignment=TA_RIGHT),
+                _p(f'<font color="#15803D"><b>{_fmt(total_paid)} FCFA</b></font>',
+                   fontSize=9, alignment=TA_RIGHT),
+            ])
+            pay_rows.append([
+                "", "",
+                _p("<b>Reste à payer</b>", fontSize=9, alignment=TA_RIGHT),
+                _p(f'<font color="#DC2626"><b>{_fmt(remaining)} FCFA</b></font>',
+                   fontSize=9, alignment=TA_RIGHT),
+            ])
+
+        n_rows = len(pay_rows)
+        pt = Table(pay_rows, colWidths=[3.5 * cm, 4.5 * cm, 3.5 * cm, 4 * cm])
+        ts = [
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#F1F5F9")),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("ALIGN",         (3, 0), (3, -1),  "RIGHT"),
+        ]
+        if remaining > 0:
+            ts += [
+                ("BACKGROUND", (0, n_rows - 1), (-1, n_rows - 1), colors.HexColor("#FEF2F2")),
+                ("LINEABOVE",  (0, n_rows - 1), (-1, n_rows - 1), 0.5, colors.HexColor("#FCA5A5")),
+            ]
+        pt.setStyle(TableStyle(ts))
+        story.append(pt)
+
+    # ── Pied de page ──────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1.2 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#E5E7EB")))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(_p("AquaTogo — Merci pour votre confiance !",
+                    fontSize=8, textColor=gray, alignment=TA_CENTER))
+
+    # ── Tampon PAYÉ ───────────────────────────────────────────────────────────
+    if global_status == "paid":
+        def _draw_paid_stamp(canvas, doc):
+            canvas.saveState()
+            canvas.setFillAlpha(0.25)
+            canvas.setStrokeAlpha(0.25)
+            stamp_green = colors.HexColor("#15803D")
+            canvas.setFillColor(stamp_green)
+            canvas.setStrokeColor(stamp_green)
+            canvas.setLineWidth(5)
+            canvas.setFont("Helvetica-Bold", 62)
+            w, h = A4
+            canvas.translate(w / 2, h / 2)
+            canvas.rotate(42)
+            canvas.roundRect(-108, -36, 216, 72, 10, fill=0, stroke=1)
+            canvas.drawCentredString(0, -22, "PAYÉ")
+            canvas.restoreState()
+        doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)
+    else:
+        doc.build(story)
+    buffer.seek(0)
+
+    filename = f"Facture_Client_{client.name.replace(' ', '_')}_{_date.today().strftime('%Y%m%d')}.pdf"
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
