@@ -148,12 +148,17 @@ def product_detail(request, pk):
 
     sale_history = filtered_qs[:50] if filter_month == 0 else filtered_qs
 
+    # Historique des mouvements de stock
+    from .models import StockMovement
+    stock_movements = StockMovement.objects.filter(product=product).order_by("-created_at")[:20]
+
     return render(
         request,
         "products/detail.html",
         {
             "product": product,
             "sale_history": sale_history,
+            "stock_movements": stock_movements,
             "is_staff": request.user.is_staff,
             "available_months": available_months,
             "current_periode": current_periode,

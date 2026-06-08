@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -50,6 +51,7 @@ def _assign_tour_numbers(execution_list: list) -> None:
 
 @login_required
 def service_list(request):
+    import json as _json
     services = Service.objects.filter(is_active=True).order_by("name")
 
     # Annotate execution count per service
@@ -61,8 +63,15 @@ def service_list(request):
         next_due_date__isnull=False,
     ).count()
 
+    # Données JSON pour le modal Alpine.js d'assignation rapide
+    services_json = _json.dumps([
+        {"id": s.id, "name": s.name, "price": str(s.price)}
+        for s in services
+    ])
+
     context = {
         "services": services,
+        "services_json": services_json,
         "upcoming_count": upcoming_count,
         "is_staff": request.user.is_staff,
         "app_name": "services",
@@ -191,6 +200,122 @@ def service_delete(request, pk):
 
 
 @login_required
+@require_POST
+def service_quick_assign(request, pk):
+    """Assignation rapide : crée Sale (impayé) + SaleItem + Executions planifiées."""
+    from clients.models import Client
+    from sales.models import Sale, SaleItem
+
+    service = get_object_or_404(Service, pk=pk, is_active=True)
+
+    client_id = request.POST.get("client_id", "").strip()
+    tours_raw = request.POST.get("tours_per_month", "").strip()
+    start_tour_raw = request.POST.get("start_tour", "1").strip()
+
+    # Client obligatoire
+    client = None
+    if client_id:
+        try:
+            client = Client.objects.get(pk=int(client_id), is_active=True)
+        except (Client.DoesNotExist, ValueError):
+            client = None
+
+    if not client:
+        messages.error(request, "Veuillez sélectionner un client valide.")
+        return redirect("services:list")
+
+    # Vérifier si le client est déjà programmé pour cette prestation
+    existing = ServiceExecution.objects.filter(
+        client=client,
+        service=service,
+        is_completed=False,
+    ).exists()
+    if existing:
+        messages.error(
+            request,
+            f"« {client.name} » a déjà une prestation « {service.name} » en cours. "
+            f"Terminez les tours en cours avant de réassigner.",
+        )
+        return redirect("services:list")
+
+    tours_per_month = None
+    if tours_raw:
+        try:
+            tours_per_month = int(tours_raw)
+            if tours_per_month not in (1, 2, 3, 4):
+                tours_per_month = None
+        except ValueError:
+            tours_per_month = None
+
+    # Tour de départ choisi par l'utilisateur
+    start_tour = 1
+    try:
+        start_tour = max(1, int(start_tour_raw))
+        if tours_per_month and start_tour > tours_per_month:
+            start_tour = 1
+    except (ValueError, TypeError):
+        start_tour = 1
+
+    try:
+        with transaction.atomic():
+            # Vente (impayée)
+            sale = Sale.objects.create(
+                client=client,
+                created_by=request.user,
+                sale_date=_date.today(),
+            )
+            sale_item = SaleItem.objects.create(
+                sale=sale,
+                service=service,
+                quantity=tours_per_month or 1,
+                unit_price=service.price,
+                purchase_price_snapshot=Decimal("0.00"),
+            )
+            sale.recompute_totals()
+
+            # Premier passage
+            first_exec = ServiceExecution.objects.create(
+                client=client,
+                service=service,
+                sale_item=sale_item,
+                execution_date=_date.today(),
+                next_due_date=_date.today(),
+                tours_per_month=tours_per_month,
+                start_tour=start_tour,
+            )
+
+            # Passages suivants si multi-tours
+            if tours_per_month and tours_per_month > 1:
+                interval = first_exec.interval_days() or 0
+                prev_date = _date.today()
+                for i in range(1, tours_per_month):
+                    raw_date = prev_date + timedelta(days=interval)
+                    offset = (_date.today().weekday() - raw_date.weekday()) % 7
+                    child_date = raw_date + timedelta(days=offset)
+                    prev_date = child_date
+                    child_tour = i + 1
+                    ServiceExecution.objects.create(
+                        client=client,
+                        service=service,
+                        tours_per_month=tours_per_month,
+                        execution_date=child_date,
+                        next_due_date=child_date,
+                        parent_execution=first_exec,
+                        start_tour=child_tour,
+                    )
+
+        freq_label = f" ({tours_per_month} tours/mois)" if tours_per_month else " (ponctuel)"
+        messages.success(
+            request,
+            f"« {service.name} »{freq_label} assignée à {client.name}. Vente enregistrée (impayée).",
+        )
+    except Exception as e:
+        messages.error(request, f"Erreur : {e}")
+
+    return redirect("services:list")
+
+
+@login_required
 def execution_list(request):
     from datetime import timedelta
     today = timezone.now().date()
@@ -199,7 +324,7 @@ def execution_list(request):
     ex_qs = (
         ServiceExecution.objects
         .filter(is_completed=False, next_due_date__isnull=False)
-        .select_related("client", "service")
+        .select_related("client", "service", "sale_item__sale")
         .order_by("next_due_date")
     )
     task_qs = (
@@ -261,6 +386,19 @@ def record_execution(request, service_pk):
             client = Client.objects.get(pk=int(client_id), is_active=True)
         except (Client.DoesNotExist, ValueError):
             client = None
+
+    # Vérifier doublon client-service
+    if client:
+        existing = ServiceExecution.objects.filter(
+            client=client, service=service, is_completed=False,
+        ).exists()
+        if existing:
+            messages.error(
+                request,
+                f"« {client.name} » est déjà programmé(e) pour « {service.name} ». "
+                f"Terminez les tours en cours avant de réassigner.",
+            )
+            return redirect("services:detail", pk=service_pk)
 
     # ── Date d'exécution ─────────────────────────────────────────────────────
     raw_date = request.POST.get("execution_date", "").strip()
@@ -358,7 +496,8 @@ def calendar_week(request):
 
     executions = list(
         ServiceExecution.objects
-        .filter(next_due_date__gte=week_start, next_due_date__lte=week_end)
+        .filter(next_due_date__gte=week_start, next_due_date__lte=week_end,
+                hidden_from_calendar=False)
         .select_related("client", "service")
         .order_by("scheduled_time", "client__name")
     )
@@ -414,7 +553,8 @@ def calendar_month(request):
 
     executions = list(
         ServiceExecution.objects
-        .filter(next_due_date__gte=first_day, next_due_date__lte=last_day)
+        .filter(next_due_date__gte=first_day, next_due_date__lte=last_day,
+                hidden_from_calendar=False)
         .select_related("client", "service")
     )
     _assign_tour_numbers(executions)
@@ -488,8 +628,8 @@ def calendar_day(request):
 
     executions = list(
         ServiceExecution.objects
-        .filter(next_due_date=selected)
-        .select_related("client", "service")
+        .filter(next_due_date=selected, hidden_from_calendar=False)
+        .select_related("client", "service", "sale_item__sale")
         .order_by("scheduled_time", "client__name")
     )
     _assign_tour_numbers(executions)
@@ -533,7 +673,8 @@ def execution_complete(request, pk):
     execution = get_object_or_404(ServiceExecution, pk=pk)
     if not execution.is_completed:
         execution.is_completed = True
-        execution.save(update_fields=["is_completed"])
+        execution.completed_at = _date.today()
+        execution.save(update_fields=["is_completed", "completed_at"])
 
         # Auto-planification du prochain tour pour les services récurrents
         if execution.next_due_date and execution.tours_per_month:
@@ -564,18 +705,40 @@ def execution_complete(request, pk):
                 if execution.start_tour and execution.tours_per_month:
                     next_start_tour = (execution.start_tour % execution.tours_per_month) + 1
 
-                ServiceExecution.objects.create(
-                    client=execution.client,
-                    service=execution.service,
-                    tours_per_month=execution.tours_per_month,
-                    execution_date=next_exec_date,
-                    next_due_date=next_exec_date,
-                    start_tour=next_start_tour,
-                )
+                # Créer automatiquement une vente (impayée) pour le prochain tour
+                from sales.models import Sale, SaleItem
+
+                with transaction.atomic():
+                    sale = Sale.objects.create(
+                        client=execution.client,
+                        created_by=request.user,
+                        sale_date=next_exec_date,
+                    )
+                    sale_item = SaleItem.objects.create(
+                        sale=sale,
+                        service=execution.service,
+                        quantity=1,
+                        unit_price=execution.service.price,
+                        purchase_price_snapshot=Decimal("0.00"),
+                    )
+                    sale.recompute_totals()
+
+                    new_exec = ServiceExecution.objects.create(
+                        client=execution.client,
+                        service=execution.service,
+                        sale_item=sale_item,
+                        tours_per_month=execution.tours_per_month,
+                        execution_date=next_exec_date,
+                        next_due_date=next_exec_date,
+                        start_tour=next_start_tour,
+                    )
+
+                tour_label = f" (Tour {next_start_tour})" if next_start_tour else ""
                 messages.success(
                     request,
                     f"Prestation « {execution.service.name} » pour {execution.client.name} effectuée. "
-                    f"Prochain passage planifié le {next_exec_date.strftime('%d/%m/%Y')}."
+                    f"Prochain passage{tour_label} planifié le {next_exec_date.strftime('%d/%m/%Y')} "
+                    f"— vente de {execution.service.price:,.0f} FCFA enregistrée (impayée)."
                 )
             else:
                 messages.success(
@@ -592,6 +755,97 @@ def execution_complete(request, pk):
     if next_url:
         return redirect(next_url)
     return redirect("services:execution_list")
+
+
+@login_required
+@require_POST
+def execution_collect_payment(request, pk):
+    """Encaisser le paiement d'une exécution depuis le calendrier/liste.
+    Crée un Payment sur la Sale liée."""
+    from sales.models import Payment
+
+    execution = get_object_or_404(
+        ServiceExecution.objects.select_related("sale_item__sale", "client", "service"),
+        pk=pk,
+    )
+
+    if not execution.sale_item or not execution.sale_item.sale:
+        messages.error(request, "Aucune vente associée à cette exécution.")
+        next_url = request.POST.get("next", "")
+        return redirect(next_url or "services:execution_list")
+
+    sale = execution.sale_item.sale
+
+    raw_amount = request.POST.get("payment_amount", "").strip()
+    payment_method = request.POST.get("payment_method", "cash")
+
+    try:
+        amount = Decimal(raw_amount) if raw_amount else sale.remaining_balance
+        if amount <= 0:
+            amount = sale.remaining_balance
+    except InvalidOperation:
+        amount = sale.remaining_balance
+
+    if amount <= 0:
+        messages.info(request, "Cette vente est déjà entièrement payée.")
+        next_url = request.POST.get("next", "")
+        return redirect(next_url or "services:execution_list")
+
+    # Plafonner au solde restant
+    amount = min(amount, sale.remaining_balance)
+
+    valid_methods = [m[0] for m in Payment.Method.choices]
+    if payment_method not in valid_methods:
+        payment_method = "cash"
+
+    Payment.objects.create(
+        sale=sale,
+        recorded_by=request.user,
+        amount=amount,
+        payment_method=payment_method,
+        payment_date=_date.today(),
+    )
+
+    client_label = execution.client.name if execution.client else "client"
+    messages.success(
+        request,
+        f"Paiement de {amount:,.0f} FCFA encaissé pour « {execution.service.name} » — {client_label}.",
+    )
+
+    next_url = request.POST.get("next", "")
+    if next_url:
+        return redirect(next_url)
+    return redirect("services:execution_list")
+
+
+@login_required
+@require_POST
+def execution_hide(request, pk):
+    """Masquer/afficher une exécution dans le calendrier sans la supprimer."""
+    execution = get_object_or_404(ServiceExecution, pk=pk)
+    execution.hidden_from_calendar = not execution.hidden_from_calendar
+    execution.save(update_fields=["hidden_from_calendar"])
+    if execution.hidden_from_calendar:
+        messages.success(request, f"Prestation retirée du calendrier.")
+    else:
+        messages.success(request, f"Prestation réaffichée dans le calendrier.")
+    next_url = request.POST.get("next", "")
+    if next_url:
+        return redirect(next_url)
+    return redirect("services:execution_list")
+
+
+@login_required
+def execution_invoice(request, pk):
+    """Redirige vers la facture PDF de la vente liée à cette exécution."""
+    execution = get_object_or_404(
+        ServiceExecution.objects.select_related("sale_item__sale"),
+        pk=pk,
+    )
+    if not execution.sale_item or not execution.sale_item.sale:
+        messages.error(request, "Aucune vente associée à cette prestation.")
+        return redirect("services:detail", pk=execution.service_id)
+    return redirect("sales:invoice_pdf", pk=execution.sale_item.sale.pk)
 
 
 # ── Tâches ────────────────────────────────────────────────────────────────────
@@ -808,3 +1062,157 @@ def task_to_sale(request, pk):
     )
     messages.success(request, msg)
     return redirect("sales:detail", pk=sale.pk)
+
+
+# ── Assigner des prestations ──────────────────────────────────────────────────
+
+@login_required
+def service_assign(request):
+    """
+    Assigner des prestations à un client depuis le module Services.
+    Crée une vente en arrière-plan avec les prestations sélectionnées.
+    Même logique que sale_create mais sans la section Produits.
+    """
+    import json as _json
+    from clients.models import Client
+    from sales.models import Payment, Sale, SaleItem
+
+    services = Service.objects.filter(is_active=True).order_by("name")
+    services_data = [
+        {"id": s.id, "name": s.name, "price": str(s.price)}
+        for s in services
+    ]
+
+    if request.method == "POST":
+        cart_raw = request.POST.get("cart_data", "")
+        client_id = request.POST.get("client_id", "").strip()
+        payment_amount_raw = request.POST.get("payment_amount", "").strip()
+        payment_method = request.POST.get("payment_method", "cash")
+
+        try:
+            cart = _json.loads(cart_raw) if cart_raw else []
+        except _json.JSONDecodeError:
+            cart = []
+
+        if not cart:
+            return render(request, "services/assign.html", {
+                "services_data": services_data,
+                "error": "Aucune prestation sélectionnée.",
+            })
+
+        # Client obligatoire pour les prestations
+        client = None
+        if client_id:
+            try:
+                client = Client.objects.get(pk=int(client_id), is_active=True)
+            except (Client.DoesNotExist, ValueError):
+                client = None
+
+        if not client:
+            return render(request, "services/assign.html", {
+                "services_data": services_data,
+                "error": "Un client est requis pour assigner des prestations.",
+            })
+
+        try:
+            with transaction.atomic():
+                sale = Sale.objects.create(
+                    client=client,
+                    created_by=request.user,
+                    sale_date=_date.today(),
+                )
+
+                for item in cart:
+                    item_id = item.get("id")
+                    qty = int(item.get("qty", 1))
+                    unit_price_raw = item.get("unit_price", "0")
+                    try:
+                        unit_price = Decimal(str(unit_price_raw))
+                    except (InvalidOperation, TypeError, ValueError):
+                        unit_price = Decimal("0.00")
+
+                    service_obj = Service.objects.get(pk=item_id)
+                    tours_per_month_raw = item.get("tours_per_month")
+                    tours_per_month = int(tours_per_month_raw) if tours_per_month_raw else None
+                    start_tour_raw = item.get("start_tour")
+                    start_tour = int(start_tour_raw) if start_tour_raw else 1
+                    exec_qty_raw = item.get("exec_qty")
+                    exec_qty = int(exec_qty_raw) if exec_qty_raw else qty
+
+                    sale_item = SaleItem.objects.create(
+                        sale=sale,
+                        service=service_obj,
+                        quantity=qty,
+                        unit_price=unit_price,
+                        purchase_price_snapshot=Decimal("0.00"),
+                    )
+
+                    # Premier passage
+                    first_exec = ServiceExecution.objects.create(
+                        client=client,
+                        service=service_obj,
+                        sale_item=sale_item,
+                        execution_date=sale.sale_date,
+                        next_due_date=sale.sale_date,
+                        tours_per_month=tours_per_month,
+                        start_tour=start_tour,
+                    )
+
+                    # Passages suivants
+                    if exec_qty > 1 and tours_per_month:
+                        interval = first_exec.interval_days() or 0
+                        prev_date = sale.sale_date
+                        for i in range(1, exec_qty):
+                            raw_date = prev_date + timedelta(days=interval)
+                            offset = (sale.sale_date.weekday() - raw_date.weekday()) % 7
+                            child_date = raw_date + timedelta(days=offset)
+                            prev_date = child_date
+                            child_tour = ((start_tour - 1 + i) % tours_per_month) + 1
+                            ServiceExecution.objects.create(
+                                client=client,
+                                service=service_obj,
+                                tours_per_month=tours_per_month,
+                                execution_date=child_date,
+                                next_due_date=child_date,
+                                parent_execution=first_exec,
+                                start_tour=child_tour,
+                            )
+
+                sale.recompute_totals()
+
+                # Paiement optionnel
+                try:
+                    payment_amount = Decimal(payment_amount_raw) if payment_amount_raw else Decimal("0.00")
+                except (InvalidOperation, TypeError, ValueError):
+                    payment_amount = Decimal("0.00")
+
+                if payment_amount > Decimal("0.00"):
+                    if payment_amount > sale.total_amount:
+                        payment_amount = sale.total_amount
+                    valid_methods = [m[0] for m in Payment.Method.choices]
+                    if payment_method not in valid_methods:
+                        payment_method = "cash"
+                    Payment.objects.create(
+                        sale=sale,
+                        recorded_by=request.user,
+                        amount=payment_amount,
+                        payment_method=payment_method,
+                        payment_date=_date.today(),
+                    )
+
+        except Exception as e:
+            return render(request, "services/assign.html", {
+                "services_data": services_data,
+                "error": f"Erreur : {e}",
+            })
+
+        nb = len(cart)
+        messages.success(
+            request,
+            f"Vente créée — {nb} prestation{'s' if nb > 1 else ''} assignée{'s' if nb > 1 else ''} à {client.name}.",
+        )
+        return redirect("sales:detail", pk=sale.pk)
+
+    return render(request, "services/assign.html", {
+        "services_data": services_data,
+    })

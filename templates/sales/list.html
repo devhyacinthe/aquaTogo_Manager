@@ -63,31 +63,52 @@
   {% if sales %}
   <div class="space-y-3">
 
-    {# Totaux globaux #}
-    <div class="grid grid-cols-2 gap-3">
-      <div class="card p-4">
-        <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">CA facturé</p>
-        <p class="text-2xl font-bold text-gray-900 mt-1">{{ total_ca|floatformat:0 }}</p>
-        <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
-      </div>
-      <div class="card p-4">
-        <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Bénéfice estimé</p>
-        <p class="text-2xl font-bold text-green-600 mt-1">{{ total_profit|floatformat:0 }}</p>
-        <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
-      </div>
-    </div>
+    {# Grande card résumé financier #}
+    <div class="card p-4 space-y-4">
+      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Résumé financier</p>
 
-    {# Encaissé réel #}
-    <div class="grid grid-cols-2 gap-3">
-      <div class="card p-4 border-l-4 border-brand-500">
-        <p class="text-xs font-medium text-brand-600 uppercase tracking-wider">Encaissé</p>
-        <p class="text-2xl font-bold text-brand-700 mt-1">{{ paid_ca|floatformat:0 }}</p>
-        <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
+      {# Mini-cards 2×2 #}
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="rounded-xl bg-brand-50 px-3 py-3">
+          <p class="text-[10px] font-semibold text-brand-500 uppercase tracking-wider">Encaissé</p>
+          <p class="text-lg font-bold text-brand-700 mt-0.5 leading-tight">{{ paid_ca|floatformat:0 }}</p>
+          <p class="text-[10px] text-brand-400">FCFA</p>
+        </div>
+        <div class="rounded-xl bg-red-50 px-3 py-3">
+          <p class="text-[10px] font-semibold text-red-500 uppercase tracking-wider">Impayés</p>
+          <p class="text-lg font-bold {% if total_unpaid > 0 %}text-red-600{% else %}text-green-600{% endif %} mt-0.5 leading-tight">{{ total_unpaid|floatformat:0 }}</p>
+          <p class="text-[10px] text-red-400">FCFA</p>
+        </div>
+        <div class="rounded-xl bg-green-50 px-3 py-3">
+          <p class="text-[10px] font-semibold text-green-500 uppercase tracking-wider">Bénéfice</p>
+          <p class="text-lg font-bold text-green-700 mt-0.5 leading-tight">{{ paid_profit|floatformat:0 }}</p>
+          <p class="text-[10px] text-green-400">FCFA</p>
+        </div>
+        <a href="{% url 'accounting:list' %}" class="rounded-xl bg-orange-50 px-3 py-3 hover:bg-orange-100 transition-colors no-underline">
+          <p class="text-[10px] font-semibold text-orange-500 uppercase tracking-wider">Dépenses</p>
+          <p class="text-lg font-bold text-orange-700 mt-0.5 leading-tight">{{ total_expenses|floatformat:0 }}</p>
+          <p class="text-[10px] text-orange-400">FCFA →</p>
+        </a>
       </div>
-      <div class="card p-4 border-l-4 border-green-500">
-        <p class="text-xs font-medium text-green-600 uppercase tracking-wider">Bén. encaissé</p>
-        <p class="text-2xl font-bold text-green-700 mt-1">{{ paid_profit|floatformat:0 }}</p>
-        <p class="text-xs text-gray-400 mt-0.5">FCFA</p>
+
+      {# Reste en caisse #}
+      <div class="border-t border-gray-100 pt-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="h-7 w-7 rounded-full flex items-center justify-center {% if capital_actuel >= 0 %}bg-green-100{% else %}bg-red-100{% endif %}">
+              <svg class="h-3.5 w-3.5 {% if capital_actuel >= 0 %}text-green-600{% else %}text-red-600{% endif %}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-gray-700">Reste en caisse</p>
+              <p class="text-[10px] text-gray-400">Cumul total (encaissé − dépenses)</p>
+            </div>
+          </div>
+          <p class="text-lg font-bold {% if capital_actuel >= 0 %}text-green-700{% else %}text-red-700{% endif %}">
+            {% if capital_actuel >= 0 %}+{% endif %}{{ capital_actuel|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span>
+          </p>
+        </div>
       </div>
     </div>
 
@@ -177,50 +198,91 @@
   </div>
   {% endif %}
 
-  {# ── Liste des ventes ───────────────────────────────────────────────────── #}
-  {% if sales %}
+  {# ── Liste des ventes (groupées par client) ─────────────────────────────── #}
+  {% if grouped_sales %}
   <div class="space-y-2">
-    {% for sale in sales %}
-    <a href="{% url 'sales:detail' sale.pk %}"
-       class="card flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition-colors active:bg-gray-100 {% if sale.status == 'canceled' %}opacity-60{% endif %}">
+    {% for group in grouped_sales %}
+    <div class="card overflow-hidden">
+      {# En-tête du groupe — cliquable pour déplier #}
+      <button type="button"
+              onclick="toggleGroup(this)"
+              class="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <p class="font-semibold text-gray-900 truncate">{{ group.client_name }}</p>
+            {% if group.has_unpaid %}
+            <span class="flex h-2 w-2 rounded-full bg-red-400 shrink-0" title="A des impayés"></span>
+            {% endif %}
+          </div>
+          <div class="flex items-center gap-2 mt-0.5">
+            <p class="text-xs text-gray-400">{{ group.sales|length }} vente{{ group.sales|length|pluralize }}</p>
+          </div>
+        </div>
+        <div class="shrink-0 text-right flex items-center gap-3">
+          <p class="font-bold text-gray-900">
+            {{ group.total|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span>
+          </p>
+          <svg class="h-4 w-4 text-gray-400 transition-transform duration-200 chevron-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
+          </svg>
+        </div>
+      </button>
 
-      {# Gauche : infos principale #}
-      <div class="min-w-0 flex-1">
-        <p class="font-semibold text-gray-900 truncate">
-          {% if sale.client %}{{ sale.client.name }}{% else %}Client anonyme{% endif %}
-        </p>
-        <div class="flex items-center gap-2 mt-0.5">
-          <p class="text-xs text-gray-400">{{ sale.sale_date|date:"d/m/Y" }}</p>
-          <span class="text-gray-200">·</span>
-          <p class="text-xs text-gray-400">{{ sale.created_at|time:"H:i" }}</p>
-          <span class="text-gray-200">·</span>
-          <p class="text-xs text-gray-400">{{ sale.items.count }} article{{ sale.items.count|pluralize }}</p>
+      {# Contenu dépliable — les ventes individuelles #}
+      <div class="group-content" style="max-height:0;overflow:hidden;transition:max-height .25s ease-out;">
+        <div class="border-t border-gray-100">
+          {% for sale in group.sales %}
+          <a href="{% url 'sales:detail' sale.pk %}"
+             class="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors active:bg-gray-100 border-b border-gray-50 last:border-b-0 {% if sale.status == 'canceled' %}opacity-60{% endif %}">
+
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="text-xs text-gray-400">{{ sale.sale_date|date:"d/m/Y" }}</p>
+                <span class="text-gray-200">·</span>
+                <p class="text-xs text-gray-400">{{ sale.created_at|time:"H:i" }}</p>
+                <span class="text-gray-200">·</span>
+                <p class="text-xs text-gray-400">{{ sale.items.count }} article{{ sale.items.count|pluralize }}</p>
+              </div>
+            </div>
+
+            <div class="shrink-0 text-right flex items-center gap-2">
+              <p class="text-sm font-semibold {% if sale.status == 'canceled' %}text-gray-400 line-through{% else %}text-gray-900{% endif %}">
+                {{ sale.total_amount|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span>
+              </p>
+              {% if sale.status == 'canceled' %}
+                <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Annulée</span>
+              {% elif sale.payment_status == 'paid' %}
+                <span class="badge-green">Payé</span>
+              {% elif sale.payment_status == 'partial' %}
+                <span class="badge-yellow">Partiel</span>
+              {% else %}
+                <span class="badge-red">Impayé</span>
+              {% endif %}
+              <svg class="h-3.5 w-3.5 text-gray-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+              </svg>
+            </div>
+          </a>
+          {% endfor %}
         </div>
       </div>
-
-      {# Droite : montant + statut #}
-      <div class="shrink-0 text-right flex flex-col items-end gap-1">
-        <p class="font-bold {% if sale.status == 'canceled' %}text-gray-400 line-through{% else %}text-gray-900{% endif %}">
-          {{ sale.total_amount|floatformat:0 }} <span class="text-xs font-normal text-gray-400">FCFA</span>
-        </p>
-        {% if sale.status == 'canceled' %}
-          <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">Annulée</span>
-        {% elif sale.payment_status == 'paid' %}
-          <span class="badge-green">Payé</span>
-        {% elif sale.payment_status == 'partial' %}
-          <span class="badge-yellow">Partiel</span>
-        {% else %}
-          <span class="badge-red">Impayé</span>
-        {% endif %}
-      </div>
-
-      {# Chevron #}
-      <svg class="h-4 w-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
-      </svg>
-    </a>
+    </div>
     {% endfor %}
   </div>
+
+  <script>
+  function toggleGroup(btn) {
+    const content = btn.nextElementSibling;
+    const chevron = btn.querySelector('.chevron-icon');
+    if (content.style.maxHeight && content.style.maxHeight !== '0px') {
+      content.style.maxHeight = '0px';
+      chevron.style.transform = 'rotate(0deg)';
+    } else {
+      content.style.maxHeight = content.scrollHeight + 'px';
+      chevron.style.transform = 'rotate(180deg)';
+    }
+  }
+  </script>
 
   {# ── Pagination ─────────────────────────────────────────────────────────── #}
   {% if page_obj.has_other_pages %}

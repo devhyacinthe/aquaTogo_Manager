@@ -59,39 +59,8 @@
     </div>
   </div>
 
-  {# ── Téléchargements ──────────────────────────────────────────────────────── #}
-  <div>
-    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Téléchargements</h2>
-    <div class="grid grid-cols-2 gap-3">
 
-      <a href="{% url 'core:download_prestations_demain' %}"
-         class="flex flex-col items-start gap-2 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3.5 hover:bg-purple-100 active:scale-95 transition-all group">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 group-hover:bg-purple-200 transition-colors">
-          <svg class="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-          </svg>
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-purple-900">Prestations demain</p>
-          <p class="text-xs text-purple-500 mt-0.5">PDF · Planning du {{ tomorrow|date:"d/m/Y" }}</p>
-        </div>
-      </a>
-
-      <a href="{% url 'core:download_ventes_aujourd_hui' %}"
-         class="flex flex-col items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3.5 hover:bg-emerald-100 active:scale-95 transition-all group">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 group-hover:bg-emerald-200 transition-colors">
-          <svg class="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-          </svg>
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-emerald-900">Ventes aujourd'hui</p>
-          <p class="text-xs text-emerald-500 mt-0.5">PDF · Articles du {{ today|date:"d/m/Y" }}</p>
-        </div>
-      </a>
-
-    </div>
-  </div>
+  {# ── Téléchargements déplacés vers la sidebar ── #}
 
   {# ── Alerte J-1 prestations ──────────────────────────────────────────────── #}
   {% if due_tomorrow %}

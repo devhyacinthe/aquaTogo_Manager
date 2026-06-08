@@ -2,8 +2,12 @@
 
 {% block title %}Prestations{% endblock %}
 
+{% block extra_head %}
+{{ services_json|json_script:"d-services-list" }}
+{% endblock %}
+
 {% block content %}
-<div class="max-w-2xl mx-auto space-y-5">
+<div class="max-w-2xl mx-auto space-y-5" x-data="serviceListApp()">
 
   <!-- Header -->
   <div class="flex items-center justify-between gap-3">
@@ -11,14 +15,22 @@
       <h1 class="text-xl font-bold text-gray-900">Prestations</h1>
       <p class="text-sm text-gray-500 mt-0.5">Services proposés à vos clients</p>
     </div>
-    {% if is_staff %}
-    <a href="{% url 'services:create' %}" class="btn-primary shrink-0">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-      </svg>
-      Nouveau service
-    </a>
-    {% endif %}
+    <div class="flex items-center gap-2 shrink-0">
+      <a href="{% url 'services:assign' %}" class="btn-secondary flex items-center gap-1.5">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
+        </svg>
+        Assigner une prestation 
+      </a>
+      {% if is_staff %}
+      <a href="{% url 'services:create' %}" class="btn-primary shrink-0">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+        </svg>
+        Nouveau service
+      </a>
+      {% endif %}
+    </div>
   </div>
 
   <!-- Stats chips -->
@@ -64,8 +76,8 @@
   {% if services %}
   <div class="space-y-2">
     {% for service in services %}
-    <a href="{% url 'services:detail' service.pk %}"
-       class="card flex items-center gap-3 hover:shadow-md transition-shadow no-underline group">
+    <div class="card flex items-center gap-3 group relative">
+      <a href="{% url 'services:detail' service.pk %}" class="absolute inset-0 z-0"></a>
       <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100">
         <svg class="h-5 w-5 text-brand-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655"/>
@@ -85,10 +97,20 @@
         <p class="text-xs text-gray-400 mt-0.5">{{ service.execution_count }} exécution{{ service.execution_count|pluralize }}</p>
         {% endif %}
       </div>
+      {# Bouton Assigner (ouvre le modal) #}
+      <button type="button"
+              @click.prevent.stop="openAssignModal({{ service.pk }}, '{{ service.name|escapejs }}', '{{ service.price }}')"
+              class="relative z-10 shrink-0 flex items-center gap-1.5 rounded-lg bg-purple-50 border border-purple-200 px-2.5 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 active:bg-purple-200 transition-colors"
+              title="Assigner à un client">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z"/>
+        </svg>
+        Assigner
+      </button>
       <svg class="h-5 w-5 shrink-0 text-gray-300 group-hover:text-gray-400 transition-colors" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
       </svg>
-    </a>
+    </div>
     {% endfor %}
   </div>
 
@@ -110,5 +132,192 @@
   </div>
   {% endif %}
 
+  {# ── Modal Assignation Rapide ── #}
+  <div x-show="assignModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="assignModal = false">
+    <div x-show="assignModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
+
+      {# Header modal #}
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div>
+          <h3 class="font-semibold text-gray-900">Assigner une prestation</h3>
+          <p class="text-xs text-gray-400 mt-0.5" x-text="assignServiceName + ' — ' + parseInt(assignServicePrice).toLocaleString('fr-FR') + ' FCFA'"></p>
+        </div>
+        <button type="button" @click="assignModal = false" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="px-4 py-5 space-y-5">
+
+        {# Étape 1: Client #}
+        <template x-if="assignStep === 'client'">
+          <div class="space-y-3">
+            <h4 class="text-sm font-semibold text-gray-700">1. Choisir le client</h4>
+
+            <template x-if="selectedClient">
+              <div class="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-xl px-3 py-2.5">
+                <div class="flex items-center gap-2.5">
+                  <div class="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-sm font-bold"><span x-text="selectedClient.name.charAt(0).toUpperCase()"></span></div>
+                  <div><p class="text-sm font-semibold text-gray-900" x-text="selectedClient.name"></p><p class="text-xs text-gray-400" x-text="selectedClient.phone || ''"></p></div>
+                </div>
+                <button type="button" @click="selectedClient = null; clientQuery = ''" class="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </template>
+
+            <template x-if="!selectedClient">
+              <div class="relative" @click.outside="clientResults = []">
+                <input type="text" x-model="clientQuery" @input="onClientInput()" @focus="onClientFocus()" @keydown.escape="clientResults = []" placeholder="Rechercher un client…" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+                <div x-show="clientResults.length > 0" x-transition class="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden max-h-44 overflow-y-auto">
+                  <template x-for="c in clientResults" :key="c.id">
+                    <button type="button" @click="selectClient(c)" class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+                      <div class="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold shrink-0" x-text="c.name.charAt(0).toUpperCase()"></div>
+                      <div class="min-w-0"><p class="text-sm font-medium text-gray-900 truncate" x-text="c.name"></p></div>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <button type="button" @click="selectedClient && (assignStep = 'tours')" :disabled="!selectedClient" class="w-full btn-primary py-3 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">Suivant →</button>
+          </div>
+        </template>
+
+        {# Étape 2: Fréquence #}
+        <template x-if="assignStep === 'tours'">
+          <div class="space-y-3">
+            <h4 class="text-sm font-semibold text-gray-700">2. Fréquence d'entretien</h4>
+            <p class="text-xs text-gray-400">Client : <span class="font-semibold text-gray-600" x-text="selectedClient.name"></span></p>
+
+            <template x-for="opt in toursOptions" :key="opt.value">
+              <button type="button" @click="chooseTours(opt.value)" class="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 text-left hover:border-purple-400 hover:bg-purple-50 active:bg-purple-100 transition-colors group">
+                <div><p class="text-sm font-semibold text-gray-900" x-text="opt.label"></p><p class="text-xs text-gray-400 mt-0.5" x-text="opt.detail"></p></div>
+                <svg class="h-4 w-4 text-gray-300 group-hover:text-purple-500 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+              </button>
+            </template>
+
+            <button type="button" @click="chooseTours(null)" class="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-dashed border-gray-300 text-left hover:border-gray-400 hover:bg-gray-50 transition-colors group">
+              <div><p class="text-sm font-semibold text-gray-600">Ponctuel</p><p class="text-xs text-gray-400 mt-0.5">Pas de rappel automatique</p></div>
+              <svg class="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+            </button>
+
+            <button type="button" @click="assignStep = 'client'" class="w-full py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">← Changer le client</button>
+          </div>
+        </template>
+
+        {# Étape 3: Quel tour démarre ? #}
+        <template x-if="assignStep === 'confirm'">
+          <div class="space-y-4">
+            <h4 class="text-base font-semibold text-gray-900">Quel tour démarre ?</h4>
+
+            {# Card récap service #}
+            <div class="rounded-xl bg-purple-50 border border-purple-200 p-4">
+              <p class="text-[10px] font-semibold text-purple-500 uppercase tracking-wider">Tour de départ</p>
+              <p class="text-sm font-bold text-gray-900 mt-1" x-text="assignServiceName"></p>
+              <p class="text-xs text-gray-500 mt-0.5" x-text="chosenTours + ' tours / mois'"></p>
+            </div>
+
+            {# Grille de tours cliquables #}
+            <div>
+              <p class="text-sm text-gray-600 mb-2.5">Ce passage est le tour...</p>
+              <div class="grid gap-2.5" :class="chosenTours <= 2 ? 'grid-cols-2' : 'grid-cols-' + Math.min(chosenTours, 4)">
+                <template x-for="t in chosenTours" :key="t">
+                  <button type="button"
+                          @click="startTour = t; submitAssign()"
+                          class="flex flex-col items-center justify-center py-4 rounded-xl border-2 transition-all hover:border-purple-400 hover:bg-purple-50 active:bg-purple-100"
+                          :class="startTour === t ? 'border-purple-500 bg-purple-50' : 'border-gray-200 bg-white'">
+                    <span class="text-2xl font-bold text-gray-900" x-text="t"></span>
+                    <span class="text-xs text-gray-400 mt-0.5" x-text="'Tour ' + t"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <button type="button" @click="assignStep = 'tours'" class="w-full py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">← Changer la fréquence</button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# Formulaire caché pour l'assignation #}
+  <form id="assign-form" method="post" x-ref="assignForm" style="display:none">
+    {% csrf_token %}
+    <input type="hidden" name="client_id" x-ref="assignClientId" />
+    <input type="hidden" name="tours_per_month" x-ref="assignTours" />
+    <input type="hidden" name="start_tour" x-ref="assignStartTour" />
+  </form>
+
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function serviceListApp() {
+  return {
+    assignModal: false,
+    assignStep: 'client',
+    assignServiceId: null,
+    assignServiceName: '',
+    assignServicePrice: '0',
+    chosenTours: null,
+    startTour: 1,
+
+    clientQuery: '', clientTimeout: null, clientResults: [], selectedClient: null,
+
+    toursOptions: [
+      { value: 1, label: '1 tour / mois', detail: 'Tous les 30 jours' },
+      { value: 2, label: '2 tours / mois', detail: 'Tous les 15 jours' },
+      { value: 3, label: '3 tours / mois', detail: 'Tous les 10 jours' },
+      { value: 4, label: '4 tours / mois', detail: 'Tous les 7 jours' },
+    ],
+
+    openAssignModal(id, name, price) {
+      this.assignServiceId = id;
+      this.assignServiceName = name;
+      this.assignServicePrice = price;
+      this.assignStep = 'client';
+      this.selectedClient = null;
+      this.clientQuery = '';
+      this.clientResults = [];
+      this.chosenTours = null;
+      this.startTour = 1;
+      this.assignModal = true;
+    },
+
+    async _fetchClients(q) {
+      try { const r = await fetch('/ventes/api/clients/?q=' + encodeURIComponent(q)); this.clientResults = await r.json(); } catch(e) {}
+    },
+    onClientFocus() { if (!this.selectedClient && this.clientResults.length === 0) this._fetchClients(''); },
+    onClientInput() {
+      clearTimeout(this.clientTimeout); this.selectedClient = null;
+      const q = this.clientQuery.trim();
+      if (!q) { this._fetchClients(''); return; }
+      this.clientTimeout = setTimeout(() => this._fetchClients(q), 350);
+    },
+    selectClient(c) { this.selectedClient = c; this.clientQuery = c.name; this.clientResults = []; },
+
+    chooseTours(tours) {
+      this.chosenTours = tours;
+      this.startTour = 1;
+      if (!tours) {
+        // Ponctuel: pas de choix de tour, soumission directe
+        this.submitAssign();
+      } else {
+        this.assignStep = 'confirm';
+      }
+    },
+
+    submitAssign() {
+      if (!this.selectedClient || !this.assignServiceId) return;
+      this.$refs.assignForm.action = '/prestations/' + this.assignServiceId + '/assigner-rapide/';
+      this.$refs.assignClientId.value = this.selectedClient.id;
+      this.$refs.assignTours.value = this.chosenTours || '';
+      this.$refs.assignStartTour.value = this.startTour;
+      this.$refs.assignForm.submit();
+    },
+  };
+}
+</script>
 {% endblock %}

@@ -111,6 +111,15 @@ class ServiceExecution(models.Model):
         help_text="Calculée automatiquement depuis execution_date + intervalle selon les tours.",
     )
     is_completed = models.BooleanField(default=False)
+    completed_at = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date à laquelle la prestation a été marquée comme effectuée.",
+    )
+    hidden_from_calendar = models.BooleanField(
+        default=False,
+        help_text="Masquée du calendrier mais toujours dans le système.",
+    )
     reminder_sent = models.BooleanField(default=False)
     confirmed = models.BooleanField(
         default=False,

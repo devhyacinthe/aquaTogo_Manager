@@ -50,6 +50,10 @@ class Product(models.Model):
         null=True,
     )
     stock_quantity = models.PositiveIntegerField(default=0)
+    initial_stock = models.PositiveIntegerField(
+        default=0,
+        help_text="Stock après le dernier réapprovisionnement.",
+    )
     low_stock_threshold = models.PositiveIntegerField(default=5)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -66,6 +70,22 @@ class Product(models.Model):
 
     def __str__(self):
         return f"[{self.category.name}] {self.name}"
+
+    def save(self, **kwargs):
+        is_new = self._state.adding
+        super().save(**kwargs)
+        if is_new and self.stock_quantity > 0:
+            # Enregistrer le stock initial à la création
+            self.initial_stock = self.stock_quantity
+            Product.objects.filter(pk=self.pk).update(initial_stock=self.stock_quantity)
+            StockMovement.objects.create(
+                product=self,
+                movement_type=StockMovement.MovementType.CREATION,
+                quantity=self.stock_quantity,
+                stock_before=0,
+                stock_after=self.stock_quantity,
+                note=f"Stock initial à la création du produit.",
+            )
 
     @property
     def margin(self) -> Decimal:
@@ -97,12 +117,69 @@ class Product(models.Model):
                 f"Stock insuffisant pour '{self.name}' "
                 f"(disponible : {self.stock_quantity}, demandé : {quantity})."
             )
+        stock_before = self.stock_quantity
         self.stock_quantity -= quantity
         self.save(update_fields=["stock_quantity", "updated_at"])
+        StockMovement.objects.create(
+            product=self,
+            movement_type=StockMovement.MovementType.SALE,
+            quantity=quantity,
+            stock_before=stock_before,
+            stock_after=self.stock_quantity,
+            note=f"Vente de {quantity} unité(s).",
+        )
 
     def increase_stock(self, quantity: int) -> None:
         """Augmente le stock (réapprovisionnement ou annulation de vente)."""
         if quantity <= 0:
             raise ValueError("La quantité doit être positive.")
+        stock_before = self.stock_quantity
         self.stock_quantity += quantity
-        self.save(update_fields=["stock_quantity", "updated_at"])
+        self.initial_stock = self.stock_quantity
+        self.save(update_fields=["stock_quantity", "initial_stock", "updated_at"])
+        StockMovement.objects.create(
+            product=self,
+            movement_type=StockMovement.MovementType.RESTOCK,
+            quantity=quantity,
+            stock_before=stock_before,
+            stock_after=self.stock_quantity,
+            note=f"Réapprovisionnement de {quantity} unité(s).",
+        )
+
+
+class StockMovement(models.Model):
+    """Historique de tous les mouvements de stock d'un produit."""
+
+    class MovementType(models.TextChoices):
+        CREATION = "creation", "Création"
+        RESTOCK = "restock", "Réapprovisionnement"
+        SALE = "sale", "Vente"
+        ADJUSTMENT = "adjustment", "Ajustement"
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="stock_movements",
+    )
+    movement_type = models.CharField(
+        max_length=20,
+        choices=MovementType.choices,
+    )
+    quantity = models.PositiveIntegerField()
+    stock_before = models.PositiveIntegerField()
+    stock_after = models.PositiveIntegerField()
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Mouvement de stock"
+        verbose_name_plural = "Mouvements de stock"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_movement_type_display()} — {self.product.name} ({self.quantity})"
+
+    @property
+    def is_incoming(self):
+        return self.movement_type in (self.MovementType.CREATION, self.MovementType.RESTOCK)
+

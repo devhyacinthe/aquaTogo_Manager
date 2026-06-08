@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Assigner des prestations{% endblock %}
+{% block extra_head %}{{ services_data|json_script:"d-services" }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto" x-data="serviceAssign()">
+
+  <div class="flex items-center gap-3 mb-5">
+    <a href="{% url 'services:list' %}" class="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors shadow-sm">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+    </a>
+    <h1 class="text-xl font-bold text-gray-900">Assigner des prestations</h1>
+  </div>
+
+  {% if error %}
+  <div class="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium">{{ error }}</div>
+  {% endif %}
+
+  <div class="space-y-4">
+
+    {# ── Client ── #}
+    <div class="card p-4 space-y-3">
+      <h2 class="text-sm font-semibold text-gray-700">Client <span class="text-red-500">*</span></h2>
+      <template x-if="selectedClient">
+        <div class="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-xl px-3 py-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-sm font-bold shrink-0"><span x-text="selectedClient.name.charAt(0).toUpperCase()"></span></div>
+            <div><p class="text-sm font-semibold text-gray-900" x-text="selectedClient.name"></p><p class="text-xs text-gray-400" x-text="selectedClient.phone || 'Pas de téléphone'"></p></div>
+          </div>
+          <button type="button" @click="clearClient()" class="p-1 text-gray-400 hover:text-red-500 transition-colors">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </template>
+      <template x-if="!selectedClient">
+        <div class="relative" @click.outside="clientResults = []">
+          <input type="text" x-model="clientQuery" @input="onClientInput()" @focus="onClientFocus()" @keydown.escape="clientResults = []" placeholder="Rechercher un client…" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+          <div x-show="clientResults.length > 0" x-transition class="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+            <template x-for="c in clientResults" :key="c.id">
+              <button type="button" @click="selectClient(c)" class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+                <div class="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold shrink-0" x-text="c.name.charAt(0).toUpperCase()"></div>
+                <div class="min-w-0"><p class="text-sm font-medium text-gray-900 truncate" x-text="c.name"></p><p class="text-xs text-gray-400" x-text="c.phone || ''"></p></div>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+      <button type="button" @click="openNewClientModal()" class="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        Créer un nouveau client
+      </button>
+    </div>
+
+    {# ── Prestations ── #}
+    <div class="card p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.653-4.655"/></svg>
+          <h2 class="text-sm font-semibold text-gray-700">Prestations</h2>
+          <span x-show="serviceCount > 0" x-text="serviceCount" style="display:inline-flex;align-items:center;justify-content:center;height:18px;min-width:18px;border-radius:9999px;background:#7c3aed;color:white;font-size:0.7rem;font-weight:700;padding:0 5px;"></span>
+        </div>
+        <button type="button" @click="selectedClient ? (modal='services', searchQuery='') : alert('Sélectionnez d\'abord un client.')" :class="!selectedClient ? 'opacity-50' : ''" class="btn-secondary text-xs py-1.5 px-3">+ Prestation</button>
+      </div>
+      <div x-show="!selectedClient" style="display:flex;align-items:flex-start;gap:8px;border-radius:10px;background:#faf5ff;border:1px solid #e9d5ff;padding:10px 12px;">
+        <svg style="height:14px;width:14px;color:#7c3aed;flex-shrink:0;margin-top:1px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
+        <p style="font-size:0.75rem;color:#6d28d9;line-height:1.4;">Sélectionnez un client pour ajouter des prestations.</p>
+      </div>
+      <template x-if="cart.length === 0 && selectedClient"><p class="text-xs text-gray-400 py-2 text-center">Aucune prestation ajoutée</p></template>
+      <template x-if="cart.length > 0">
+        <div class="divide-y divide-gray-100 -mx-4">
+          <template x-for="(item, idx) in cart" :key="idx">
+            <div class="flex items-center gap-3 px-4 py-3" style="background:#faf5ff;">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap"><p class="text-sm font-medium text-gray-900 truncate" x-text="item.name"></p><span style="font-size:0.65rem;font-weight:600;color:#7c3aed;background:#ede9fe;border-radius:9999px;padding:1px 7px;">Prestation</span></div>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  <template x-if="item.tours_per_month && item.exec_qty > 1"><span>Tours <span x-text="item.start_tour"></span>→<span x-text="item.tours_per_month"></span> · <span x-text="item.qty"></span>×<span x-text="fmt(item.unit_price)"></span> FCFA</span></template>
+                  <template x-if="item.tours_per_month && item.exec_qty === 1"><span>Tour <span x-text="item.start_tour"></span> · <span x-text="fmt(item.unit_price)"></span> FCFA</span></template>
+                  <template x-if="!item.tours_per_month"><span><span x-text="fmt(item.unit_price)"></span> FCFA · Ponctuel</span></template>
+                </p>
+              </div>
+              <div class="shrink-0 text-right"><p class="text-sm font-semibold text-gray-900"><span x-text="fmt(parseFloat(item.unit_price) * item.qty)"></span> <span class="text-xs font-normal text-gray-400">FCFA</span></p></div>
+              <button type="button" @click="removeItem(idx)" class="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors"><svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg></button>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    {# ── Résumé ── #}
+    <template x-if="cart.length > 0">
+      <div class="card p-4 space-y-2">
+        <h2 class="text-sm font-semibold text-gray-700 mb-3">Résumé</h2>
+        <div class="flex justify-between items-center"><span class="text-sm text-gray-600">Total</span><span class="text-lg font-bold text-gray-900"><span x-text="fmt(total)"></span> FCFA</span></div>
+      </div>
+    </template>
+
+    {# ── Paiement ── #}
+    <div class="card p-4 space-y-4">
+      <div><h2 class="text-sm font-semibold text-gray-700">Paiement immédiat <span class="font-normal text-gray-400">(optionnel)</span></h2><p class="text-xs text-gray-400 mt-0.5">Laissez vide pour enregistrer comme impayé.</p></div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Montant (FCFA)</label>
+        <div class="flex gap-2 items-center">
+          <input type="number" x-model="paymentAmount" min="0" step="1" :placeholder="cart.length > 0 ? fmt(total) : '0'" class="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+          <button type="button" @click="paymentAmount = total" :disabled="cart.length === 0" class="btn-secondary text-xs py-2 px-3 disabled:opacity-40">Solde total</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Méthode</label>
+        <div class="flex gap-2 flex-wrap">
+          <button type="button" @click="paymentMethod='cash'" :class="paymentMethod==='cash' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'" class="px-4 py-2 rounded-xl border text-sm font-medium transition-colors">Espèces</button>
+          <button type="button" @click="paymentMethod='mobile_money'" :class="paymentMethod==='mobile_money' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'" class="px-4 py-2 rounded-xl border text-sm font-medium transition-colors">Mobile Money</button>
+          <button type="button" @click="paymentMethod='bank'" :class="paymentMethod==='bank' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'" class="px-4 py-2 rounded-xl border text-sm font-medium transition-colors">Virement</button>
+        </div>
+      </div>
+    </div>
+
+    {# ── Bouton soumission ── #}
+    <button type="button" @click="submit()" :disabled="cart.length === 0 || submitting || !selectedClient" class="w-full btn-primary py-4 text-base font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+      <template x-if="!submitting"><span>Assigner les prestations</span></template>
+      <template x-if="submitting"><span>Enregistrement…</span></template>
+    </button>
+  </div>
+
+  {% include "services/assign_modals.html" %}
+
+  <form id="sale-form" method="post" x-ref="form" style="display:none">{% csrf_token %}<input type="hidden" id="inp-cart" name="cart_data" /><input type="hidden" id="inp-client" name="client_id" /><input type="hidden" id="inp-payment" name="payment_amount" /><input type="hidden" id="inp-method" name="payment_method" /></form>
+
+  <div x-show="cartError" x-transition class="fixed bottom-20 left-4 right-4 z-50 flex items-center gap-3 rounded-xl bg-red-600 px-4 py-3 shadow-lg sm:left-auto sm:right-6 sm:w-80" style="display:none">
+    <svg class="h-5 w-5 shrink-0 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+    <p class="text-sm font-medium text-white" x-text="cartError"></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}{% include "services/assign_js.html" %}{% endblock %}

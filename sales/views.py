@@ -2,6 +2,7 @@ import csv
 import json as _json
 import re
 import urllib.parse
+from collections import OrderedDict
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -134,8 +135,51 @@ def sale_list(request):
     paid_ca = paid_agg["ca"]
     paid_profit = paid_agg["profit"]
 
+    # Regrouper les ventes par client pour affichage en cards dépliables
+    grouped_sales = OrderedDict()
+    for sale in page:
+        client_name = sale.client.name if sale.client else "Client anonyme"
+        client_id = sale.client.pk if sale.client else 0
+        key = client_id
+        if key not in grouped_sales:
+            grouped_sales[key] = {
+                "client_name": client_name,
+                "client_id": client_id,
+                "sales": [],
+                "total": Decimal("0.00"),
+                "has_unpaid": False,
+            }
+        grouped_sales[key]["sales"].append(sale)
+        grouped_sales[key]["total"] += sale.total_amount
+        if sale.payment_status != "paid" and sale.status != "canceled":
+            grouped_sales[key]["has_unpaid"] = True
+    grouped_sales_list = list(grouped_sales.values())
+
+    # Total impayés
+    total_unpaid = total_ca - paid_ca
+
+    # Total dépenses de la période
+    from accounting.models import Expense
+    expense_filter = {}
+    if start is not None:
+        expense_filter["expense_date__gte"] = start
+        expense_filter["expense_date__lte"] = end
+    total_expenses = Expense.objects.filter(**expense_filter).aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    # Capital en caisse (cumul tous temps)
+    all_time_cash_in = Payment.objects.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+    all_time_cash_out = Expense.objects.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+    capital_actuel = all_time_cash_in - all_time_cash_out
+
     return render(request, "sales/list.html", {
         "sales": sales,
+        "grouped_sales": grouped_sales_list,
         "page_obj": page,
         "period": periode,
         "today": today,
@@ -148,6 +192,9 @@ def sale_list(request):
         "cat_breakdown": cat_breakdown,
         "paid_ca": paid_ca,
         "paid_profit": paid_profit,
+        "total_unpaid": total_unpaid,
+        "total_expenses": total_expenses,
+        "capital_actuel": capital_actuel,
     })
 
 
@@ -838,11 +885,13 @@ def sale_invoice_pdf(request, pk):
     client_name = sale.client.name if sale.client else "Client anonyme"
     client_phone = getattr(sale.client, "phone", "") if sale.client else ""
     status_colors = {"paid": "#15803D", "partial": "#D97706", "unpaid": "#DC2626"}
+    status_labels = {"paid": "PAYÉ", "partial": "PARTIELLEMENT PAYÉ", "unpaid": "IMPAYÉ"}
     s_color = status_colors.get(sale.payment_status, "#374151")
+    s_label = status_labels.get(sale.payment_status, sale.get_payment_status_display())
 
     info_data = [[
         _p(f'<font size="14"><b>FACTURE N° {sale.pk:04d}</b></font><br/>'
-           f'<font size="9" color="{s_color}"><b>● {sale.get_payment_status_display()}</b></font>'),
+           f'<font size="9" color="{s_color}"><b>● {s_label}</b></font>'),
         _p('<b>Client</b><br/>'
            f'<font size="10">{client_name}</font>'
            + (f'<br/><font size="9" color="#6B7280">Tél : {client_phone}</font>' if client_phone else "")),
@@ -917,11 +966,20 @@ def sale_invoice_pdf(request, pk):
                 _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
             ])
 
+        # Résumé payé / reste
+        total_paid = sale.total_amount - remaining
         if remaining > 0:
+            # Ligne total payé
+            pay_rows.append([
+                "",
+                _p("<b>Total payé</b>", fontSize=9, alignment=TA_RIGHT),
+                _p(f'<font color="#15803D"><b>{_fmt(total_paid)} FCFA</b></font>',
+                   fontSize=9, alignment=TA_RIGHT),
+            ])
             label = "<b>Solde dû</b>" if not payments else "<b>Reste à payer</b>"
             pay_rows.append([
                 "",
-                _p(label, fontSize=9),
+                _p(label, fontSize=9, alignment=TA_RIGHT),
                 _p(f'<font color="#DC2626"><b>{_fmt(remaining)} FCFA</b></font>',
                    fontSize=9, alignment=TA_RIGHT),
             ])
@@ -983,6 +1041,9 @@ def sale_invoice_pdf(request, pk):
                 label = f"N° {s.pk:04d}"
                 if s.pk == sale.pk:
                     label += "  ← présente facture"
+                # Statut par facture
+                if s.payment_status == "partial":
+                    label += " (Partiel)"
                 debt_rows.append([
                     _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
                     _p(label, fontSize=8),
@@ -1020,30 +1081,34 @@ def sale_invoice_pdf(request, pk):
     story.append(_p("AquaTogo — Merci pour votre confiance !",
                     fontSize=8, textColor=gray, alignment=TA_CENTER))
 
+    # ── Tampon visuel selon le statut ─────────────────────────────────────────
+    def _draw_stamp(canvas, doc, text, stamp_color):
+        canvas.saveState()
+        canvas.setFillAlpha(0.25)
+        canvas.setStrokeAlpha(0.25)
+        c = colors.HexColor(stamp_color)
+        canvas.setFillColor(c)
+        canvas.setStrokeColor(c)
+        canvas.setLineWidth(5)
+        canvas.setFont("Helvetica-Bold", 52)
+        w, h = A4
+        canvas.translate(w / 2, h / 2)
+        canvas.rotate(42)
+        tw = canvas.stringWidth(text, "Helvetica-Bold", 52)
+        rx = max(tw / 2 + 20, 108)
+        canvas.roundRect(-rx, -36, rx * 2, 72, 10, fill=0, stroke=1)
+        canvas.drawCentredString(0, -18, text)
+        canvas.restoreState()
+
     if sale.payment_status == "paid":
-        def _draw_paid_stamp(canvas, doc):
-            # Police 62pt : cap-height ≈ 45pt, baseline → top ≈ 45pt
-            # Rect height=72 → top at 36, center at 0
-            # baseline = center − cap_height/2 = 0 − 22 = −22 → top = -22+45 = 23 < 36 ✓
-            canvas.saveState()
-            canvas.setFillAlpha(0.30)
-            canvas.setStrokeAlpha(0.30)
-            stamp_green = colors.HexColor("#15803D")
-            canvas.setFillColor(stamp_green)
-            canvas.setStrokeColor(stamp_green)
-            canvas.setLineWidth(5)
-            canvas.setFont("Helvetica-Bold", 62)
-            w, h = A4
-            canvas.translate(w / 2, h / 2)
-            canvas.rotate(42)
-            # Rect centré verticalement sur 0 : de -36 à +36 (height=72)
-            canvas.roundRect(-108, -36, 216, 72, 10, fill=0, stroke=1)
-            # Baseline à -22 : cap top ≈ -22+45=23, bien dans le rect
-            canvas.drawCentredString(0, -22, "PAYÉ")
-            canvas.restoreState()
-        doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)
+        stamp_fn = lambda c, d: _draw_stamp(c, d, "PAYÉ", "#15803D")
+        doc.build(story, onFirstPage=stamp_fn, onLaterPages=stamp_fn)
+    elif sale.payment_status == "partial":
+        stamp_fn = lambda c, d: _draw_stamp(c, d, "PARTIEL", "#D97706")
+        doc.build(story, onFirstPage=stamp_fn, onLaterPages=stamp_fn)
     else:
-        doc.build(story)
+        stamp_fn = lambda c, d: _draw_stamp(c, d, "IMPAYÉ", "#DC2626")
+        doc.build(story, onFirstPage=stamp_fn, onLaterPages=stamp_fn)
     buffer.seek(0)
 
     filename = f"Facture_AquaTogo_{sale.pk:04d}_{sale.sale_date.strftime('%Y%m%d')}.pdf"

@@ -1,0 +1,96 @@
+{# ── Modal Prestations ── #}
+<div x-show="modal === 'services'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null; pendingService = null; pendingTours = null; pendingStartTour = null">
+  <div x-show="modal === 'services'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-lg shadow-2xl flex flex-col max-h-[85vh] lg:max-h-[75vh]">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+      <h3 class="font-semibold text-gray-900" x-text="(pendingTours && pendingStartTour !== null) ? 'Mode de paiement' : (pendingTours && pendingStartTour === null) ? 'Quel tour démarre ?' : pendingService ? 'Fréquence d\'entretien' : 'Choisir une prestation'"></h3>
+      <button type="button" @click="modal = null; pendingService = null; pendingTours = null; pendingStartTour = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg></button>
+    </div>
+
+    {# Recherche #}
+    <template x-if="!pendingService">
+      <div class="px-4 py-3 border-b border-gray-100 shrink-0"><input type="text" x-model="searchQuery" placeholder="Rechercher une prestation..." class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" /></div>
+    </template>
+
+    {# Liste services #}
+    <template x-if="!pendingService">
+      <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
+        <template x-if="filteredServices.length === 0"><div class="flex items-center justify-center py-10 text-sm text-gray-400">Aucune prestation trouvée.</div></template>
+        <template x-for="s in filteredServices" :key="s.id">
+          <button type="button" @click="!cart.some(i => i.id === s.id) && selectService(s)" :disabled="cart.some(i => i.id === s.id)" :class="cart.some(i => i.id === s.id) ? 'opacity-40 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50 active:bg-gray-100'" class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors">
+            <div class="min-w-0 flex-1"><div class="flex items-center gap-2"><p class="text-sm font-medium text-gray-900" x-text="s.name"></p><template x-if="cart.some(i => i.id === s.id)"><span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Déjà ajoutée</span></template></div></div>
+            <div class="shrink-0 text-right"><p class="text-sm font-semibold text-gray-900"><span x-text="parseInt(s.price).toLocaleString('fr-FR')"></span> FCFA</p></div>
+          </button>
+        </template>
+      </div>
+    </template>
+
+    {# Fréquence #}
+    <template x-if="pendingService && !pendingTours">
+      <div class="flex-1 flex flex-col overflow-y-auto">
+        <div class="px-5 py-4 bg-purple-50 border-b border-purple-100"><p class="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Prestation sélectionnée</p><p class="text-base font-semibold text-gray-900" x-text="pendingService.name"></p><p class="text-sm text-gray-500 mt-0.5"><span x-text="parseInt(pendingService.price).toLocaleString('fr-FR')"></span> FCFA</p></div>
+        <div class="px-5 py-5 space-y-3">
+          <p class="text-sm font-semibold text-gray-700">Nombre de passages par mois</p>
+          <template x-for="opt in toursOptions" :key="opt.value">
+            <button type="button" @click="confirmServiceWithTours(opt.value)" class="w-full flex items-center justify-between px-4 py-3.5 rounded-xl border border-gray-200 text-left hover:border-purple-400 hover:bg-purple-50 active:bg-purple-100 transition-colors group">
+              <div><p class="text-sm font-semibold text-gray-900" x-text="opt.label"></p><p class="text-xs text-gray-400 mt-0.5" x-text="opt.detail"></p></div>
+              <svg class="h-4 w-4 text-gray-300 group-hover:text-purple-500 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+            </button>
+          </template>
+          <button type="button" @click="confirmServiceWithTours(null)" class="w-full flex items-center justify-between px-4 py-3.5 rounded-xl border border-dashed border-gray-300 text-left hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100 transition-colors group">
+            <div><p class="text-sm font-semibold text-gray-600">Ponctuel / Sans renouvellement</p><p class="text-xs text-gray-400 mt-0.5">Pas de rappel automatique</p></div>
+            <svg class="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+          </button>
+        </div>
+        <div class="px-5 pb-5"><button type="button" @click="pendingService = null; pendingTours = null; searchQuery = ''" class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">← Revenir à la liste</button></div>
+      </div>
+    </template>
+
+    {# Tour de départ #}
+    <template x-if="pendingService && pendingTours && pendingTours > 1 && pendingStartTour === null">
+      <div class="flex-1 flex flex-col overflow-y-auto">
+        <div class="px-5 py-4 bg-purple-50 border-b border-purple-100"><p class="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Tour de départ</p><p class="text-base font-semibold text-gray-900" x-text="pendingService.name"></p></div>
+        <div class="px-5 py-5 space-y-3">
+          <p class="text-sm font-semibold text-gray-700">Ce passage est le tour…</p>
+          <div class="grid grid-cols-2 gap-3">
+            <template x-for="n in pendingTours" :key="n">
+              <button type="button" @click="confirmStartTour(n)" class="flex flex-col items-center justify-center py-4 rounded-xl border-2 border-gray-200 hover:border-purple-400 hover:bg-purple-50 active:bg-purple-100 transition-colors"><span class="text-2xl font-bold text-gray-800" x-text="n"></span><span class="text-xs text-gray-400 mt-0.5">Tour <span x-text="n"></span></span></button>
+            </template>
+          </div>
+        </div>
+        <div class="px-5 pb-5"><button type="button" @click="pendingTours = null; pendingStartTour = null" class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">← Changer la fréquence</button></div>
+      </div>
+    </template>
+
+    {# Mode de paiement #}
+    <template x-if="pendingTours && pendingTours > 1 && pendingStartTour !== null">
+      <div class="flex-1 flex flex-col overflow-y-auto">
+        <div class="px-5 py-4 bg-purple-50 border-b border-purple-100"><p class="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Mode de paiement</p><p class="text-base font-semibold text-gray-900" x-text="pendingService && pendingService.name"></p></div>
+        <div class="px-5 py-5 space-y-3">
+          <p class="text-sm font-semibold text-gray-700">Combien de tours le client paie-t-il ?</p>
+          <button type="button" @click="confirmPayMode(false)" class="w-full text-left px-4 py-4 rounded-xl border-2 border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:bg-brand-100 transition-colors group">
+            <div class="flex items-center justify-between"><div><p class="text-sm font-semibold text-gray-900">Tour <span x-text="pendingStartTour"></span> seulement</p><p class="text-xs text-gray-400 mt-0.5">Facturé : 1 × <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> FCFA</p></div><svg class="h-5 w-5 text-gray-300 group-hover:text-brand-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></div>
+          </button>
+          <template x-if="pendingTours - pendingStartTour > 0">
+            <button type="button" @click="confirmPayMode(true)" class="w-full text-left px-4 py-4 rounded-xl border-2 border-green-200 hover:border-green-500 hover:bg-green-50 active:bg-green-100 transition-colors group">
+              <div class="flex items-center justify-between"><div><p class="text-sm font-semibold text-gray-900">Tours <span x-text="pendingStartTour"></span> → <span x-text="pendingTours"></span> <span class="ml-1.5 text-xs font-medium text-green-600 bg-green-100 rounded-full px-2 py-0.5">Recommandé</span></p><p class="text-xs text-gray-400 mt-0.5"><span x-text="pendingTours - pendingStartTour + 1"></span> passages · <span x-text="pendingTours"></span> × <span x-text="parseInt(pendingService && pendingService.price).toLocaleString('fr-FR')"></span> = <strong x-text="(pendingTours * parseInt(pendingService && pendingService.price)).toLocaleString('fr-FR')"></strong> FCFA</p></div><svg class="h-5 w-5 text-gray-300 group-hover:text-green-500 shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></div>
+            </button>
+          </template>
+        </div>
+        <div class="px-5 pb-5"><button type="button" @click="pendingStartTour = null" class="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">← Changer le tour de départ</button></div>
+      </div>
+    </template>
+  </div>
+</div>
+
+{# ── Modal Nouveau Client ── #}
+<div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null">
+  <div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100"><h3 class="font-semibold text-gray-900">Nouveau client</h3><button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg></button></div>
+    <div class="px-4 py-5 space-y-4">
+      <template x-if="newClientError"><p class="rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 font-medium" x-text="newClientError"></p></template>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Nom <span class="text-red-500">*</span></label><input type="text" x-model="newClientName" @keydown.enter="createClient()" placeholder="Nom du client" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" /></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Téléphone <span class="text-gray-400">(optionnel)</span></label><input type="tel" x-model="newClientPhone" @keydown.enter="createClient()" placeholder="+228 90 00 00 00" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" /></div>
+      <button type="button" @click="createClient()" :disabled="!newClientName.trim() || newClientSaving" class="w-full btn-primary py-3 font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><span x-text="newClientSaving ? 'Création…' : 'Créer le client'"></span></button>
+    </div>
+  </div>
+</div>

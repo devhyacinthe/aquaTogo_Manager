@@ -1,0 +1,79 @@
+<script>
+function serviceAssign() {
+  return {
+    services: JSON.parse(document.getElementById('d-services').textContent),
+    clientQuery: '', clientTimeout: null, clientResults: [], selectedClient: null,
+    newClientName: '', newClientPhone: '', newClientSaving: false, newClientError: '',
+    modal: null, searchQuery: '', pendingService: null, pendingTours: null, pendingStartTour: null,
+    cartError: '', cartErrorTimer: null,
+    toursOptions: [
+      { value: 1, label: '1 tour / mois', detail: 'Tous les 30 jours', interval: 30 },
+      { value: 2, label: '2 tours / mois', detail: 'Tous les 15 jours', interval: 15 },
+      { value: 3, label: '3 tours / mois', detail: 'Tous les 10 jours', interval: 10 },
+      { value: 4, label: '4 tours / mois', detail: 'Tous les 7 jours', interval: 7 },
+    ],
+    cart: [],
+    paymentAmount: '', paymentMethod: 'cash', submitting: false,
+
+    get serviceCount() { return this.cart.length; },
+    get total() { return this.cart.reduce((s,i) => s + parseFloat(i.unit_price)*i.qty, 0); },
+    get filteredServices() {
+      if (!this.searchQuery) return this.services;
+      const q = this.searchQuery.toLowerCase();
+      return this.services.filter(s => s.name.toLowerCase().includes(q));
+    },
+    fmt(n) { return Math.round(parseFloat(n)).toLocaleString('fr-FR'); },
+
+    async _fetchClients(q) {
+      try { const r = await fetch('/ventes/api/clients/?q='+encodeURIComponent(q)); this.clientResults = await r.json(); } catch(e) {}
+    },
+    onClientFocus() { if (!this.selectedClient && this.clientResults.length===0) this._fetchClients(''); },
+    onClientInput() {
+      clearTimeout(this.clientTimeout); this.selectedClient = null;
+      const q = this.clientQuery.trim();
+      if (!q) { this._fetchClients(''); return; }
+      this.clientTimeout = setTimeout(() => this._fetchClients(q), 350);
+    },
+    selectClient(c) { this.selectedClient = c; this.clientQuery = c.name; this.clientResults = []; },
+    clearClient() { this.selectedClient = null; this.clientQuery = ''; this.clientResults = []; },
+    openNewClientModal() { this.newClientName = this.clientQuery.trim(); this.newClientPhone = ''; this.newClientError = ''; this.clientResults = []; this.modal = 'new_client'; },
+    async createClient() {
+      const name = this.newClientName.trim();
+      if (!name || this.newClientSaving) return;
+      this.newClientSaving = true; this.newClientError = '';
+      try {
+        const r = await fetch('/ventes/api/clients/creer/', { method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value}, body:JSON.stringify({name, phone:this.newClientPhone.trim()}) });
+        const data = await r.json();
+        if (!r.ok) { this.newClientError = data.error||'Erreur.'; return; }
+        this.selectClient(data); this.modal = null;
+      } catch(e) { this.newClientError = 'Erreur réseau.'; } finally { this.newClientSaving = false; }
+    },
+    selectService(s) { this.pendingService = s; this.pendingTours = null; },
+    confirmServiceWithTours(tours) {
+      if (!tours || tours===1) { this._addServiceToCart(tours,1,1); } else { this.pendingTours = tours; this.pendingStartTour = null; }
+    },
+    confirmStartTour(n) { this.pendingStartTour = n; if (n===this.pendingTours) this._addServiceToCart(this.pendingTours,this.pendingTours,1,n); },
+    confirmPayMode(payAll) {
+      const tours=this.pendingTours, start=this.pendingStartTour||1;
+      this._addServiceToCart(tours, payAll?tours:1, payAll?(tours-start+1):1, start);
+    },
+    _showCartError(msg) { this.cartError=msg; if(this.cartErrorTimer) clearTimeout(this.cartErrorTimer); this.cartErrorTimer=setTimeout(()=>{this.cartError='';},4000); },
+    _addServiceToCart(tours, billingQty, execQty, startTour) {
+      const s=this.pendingService; if(!s) return;
+      if(this.cart.find(i=>i.id===s.id&&(i.tours_per_month||0)===(tours||0))) { this._showCartError('"'+s.name+'" déjà dans le panier.'); this.pendingService=null; this.pendingTours=null; this.pendingStartTour=null; this.modal=null; return; }
+      this.cart.push({ _key:'svc-'+s.id+'-'+(tours||0), type:'service', id:s.id, name:s.name, unit_price:s.price, purchase_price:'0', qty:billingQty, exec_qty:execQty, stock:null, tours_per_month:tours, start_tour:startTour||1 });
+      this.pendingService=null; this.pendingTours=null; this.pendingStartTour=null; this.modal=null; this.searchQuery='';
+    },
+    removeItem(idx) { this.cart.splice(idx,1); },
+    submit() {
+      if(this.cart.length===0||this.submitting||!this.selectedClient) return;
+      this.submitting=true;
+      document.getElementById('inp-cart').value=JSON.stringify(this.cart);
+      document.getElementById('inp-client').value=this.selectedClient.id;
+      document.getElementById('inp-payment').value=this.paymentAmount;
+      document.getElementById('inp-method').value=this.paymentMethod;
+      this.$refs.form.submit();
+    },
+  };
+}
+</script>
