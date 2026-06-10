@@ -315,8 +315,23 @@ def accounting_report(request):
     cogs = total_ca - gross_profit
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
-    # Capital en caisse = tout ce qui a été encaissé - tout ce qui a été dépensé (tous temps)
+    # Capital en caisse de la période = encaissements période - dépenses période
     from sales.models import Payment as _Payment
+    period_cash_in_qs = _Payment.objects.all()
+    period_cash_out_qs = Expense.objects.all()
+    if start:
+        period_cash_in_qs = period_cash_in_qs.filter(payment_date__gte=start, payment_date__lte=end)
+        period_cash_out_qs = period_cash_out_qs.filter(expense_date__gte=start, expense_date__lte=end)
+
+    cash_in_period = period_cash_in_qs.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+    cash_out_period = period_cash_out_qs.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+    capital_periode = cash_in_period - cash_out_period
+
+    # Capital en caisse total (cumul tous temps)
     all_time_cash_in = _Payment.objects.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
@@ -344,6 +359,10 @@ def accounting_report(request):
         "pct_products":      pct_products,
         "pct_services":      pct_services,
         "cat_breakdown_list": cat_breakdown_list,
+        "cash_in_period": cash_in_period,
+        "cash_out_period": cash_out_period,
+        "capital_periode": capital_periode,
+        "capital_periode_positif": capital_periode >= 0,
         "capital_actuel": capital_actuel,
         "capital_positif": capital_actuel >= 0,
     }

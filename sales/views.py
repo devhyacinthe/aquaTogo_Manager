@@ -885,13 +885,11 @@ def sale_invoice_pdf(request, pk):
     client_name = sale.client.name if sale.client else "Client anonyme"
     client_phone = getattr(sale.client, "phone", "") if sale.client else ""
     status_colors = {"paid": "#15803D", "partial": "#D97706", "unpaid": "#DC2626"}
-    status_labels = {"paid": "PAYÉ", "partial": "PARTIELLEMENT PAYÉ", "unpaid": "IMPAYÉ"}
     s_color = status_colors.get(sale.payment_status, "#374151")
-    s_label = status_labels.get(sale.payment_status, sale.get_payment_status_display())
 
     info_data = [[
         _p(f'<font size="14"><b>FACTURE N° {sale.pk:04d}</b></font><br/>'
-           f'<font size="9" color="{s_color}"><b>● {s_label}</b></font>'),
+           f'<font size="9" color="{s_color}"><b>● {sale.get_payment_status_display()}</b></font>'),
         _p('<b>Client</b><br/>'
            f'<font size="10">{client_name}</font>'
            + (f'<br/><font size="9" color="#6B7280">Tél : {client_phone}</font>' if client_phone else "")),
@@ -947,11 +945,10 @@ def sale_invoice_pdf(request, pk):
     story.append(at)
     story.append(Spacer(1, 0.6 * cm))
 
-    # ── Solde dû (affiché sous le total quand impayé sans paiement) ───────────
+    # ── Paiements + Solde dû ──────────────────────────────────────────────────
+    # Afficher la section dès qu'il y a des paiements OU un solde restant dû
     remaining = sale.remaining_balance
-
-    # ── Paiements reçus (seulement s'il y a au moins un paiement) ─────────────
-    if payments:
+    if payments or remaining > 0:
         story.append(_p("<b>Paiements reçus</b>", fontSize=10))
         story.append(Spacer(1, 0.25 * cm))
 
@@ -967,18 +964,11 @@ def sale_invoice_pdf(request, pk):
                 _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
             ])
 
-        # Résumé payé / reste si paiement partiel
         if remaining > 0:
-            total_paid = sale.total_amount - remaining
+            label = "<b>Solde dû</b>" if not payments else "<b>Reste à payer</b>"
             pay_rows.append([
                 "",
-                _p("<b>Total payé</b>", fontSize=9, alignment=TA_RIGHT),
-                _p(f'<font color="#15803D"><b>{_fmt(total_paid)} FCFA</b></font>',
-                   fontSize=9, alignment=TA_RIGHT),
-            ])
-            pay_rows.append([
-                "",
-                _p("<b>Reste à payer</b>", fontSize=9, alignment=TA_RIGHT),
+                _p(label, fontSize=9),
                 _p(f'<font color="#DC2626"><b>{_fmt(remaining)} FCFA</b></font>',
                    fontSize=9, alignment=TA_RIGHT),
             ])
@@ -995,6 +985,7 @@ def sale_invoice_pdf(request, pk):
             ("RIGHTPADDING",  (0, 0),  (-1, -1),      8),
             ("ALIGN",         (2, 0),  (2, -1),       "RIGHT"),
         ]
+        # Ligne "Solde dû" / "Reste à payer" : fond rouge clair
         if remaining > 0:
             ts += [
                 ("BACKGROUND",    (0, n_rows - 1), (-1, n_rows - 1), colors.HexColor("#FEF2F2")),
@@ -1011,6 +1002,7 @@ def sale_invoice_pdf(request, pk):
             .prefetch_related("payments")
             .order_by("sale_date")
         )
+        # Total calculé depuis les lignes affichées (cohérence garantie)
         outstanding = sum(s.remaining_balance for s in unpaid_sales)
         if outstanding > 0 and unpaid_sales:
             story.append(Spacer(1, 0.5 * cm))
@@ -1038,8 +1030,6 @@ def sale_invoice_pdf(request, pk):
                 label = f"N° {s.pk:04d}"
                 if s.pk == sale.pk:
                     label += "  ← présente facture"
-                if s.payment_status == "partial":
-                    label += " (Partiel)"
                 debt_rows.append([
                     _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
                     _p(label, fontSize=8),
@@ -1077,12 +1067,14 @@ def sale_invoice_pdf(request, pk):
     story.append(_p("AquaTogo — Merci pour votre confiance !",
                     fontSize=8, textColor=gray, alignment=TA_CENTER))
 
-    # ── Tampon visuel (uniquement pour les factures payées) ────────────────────
     if sale.payment_status == "paid":
         def _draw_paid_stamp(canvas, doc):
+            # Police 62pt : cap-height ≈ 45pt, baseline → top ≈ 45pt
+            # Rect height=72 → top at 36, center at 0
+            # baseline = center − cap_height/2 = 0 − 22 = −22 → top = -22+45 = 23 < 36 ✓
             canvas.saveState()
-            canvas.setFillAlpha(0.25)
-            canvas.setStrokeAlpha(0.25)
+            canvas.setFillAlpha(0.30)
+            canvas.setStrokeAlpha(0.30)
             stamp_green = colors.HexColor("#15803D")
             canvas.setFillColor(stamp_green)
             canvas.setStrokeColor(stamp_green)
@@ -1091,7 +1083,9 @@ def sale_invoice_pdf(request, pk):
             w, h = A4
             canvas.translate(w / 2, h / 2)
             canvas.rotate(42)
+            # Rect centré verticalement sur 0 : de -36 à +36 (height=72)
             canvas.roundRect(-108, -36, 216, 72, 10, fill=0, stroke=1)
+            # Baseline à -22 : cap top ≈ -22+45=23, bien dans le rect
             canvas.drawCentredString(0, -22, "PAYÉ")
             canvas.restoreState()
         doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)

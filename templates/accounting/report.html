@@ -205,6 +205,35 @@
   </div>
   {% endif %}
 
+  <!-- Trésorerie période -->
+  <div class="card">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+      Trésorerie — {{ periode_label }}
+    </h2>
+    <div class="space-y-2">
+      <div class="flex justify-between items-center py-2 border-b border-gray-100">
+        <span class="text-sm text-gray-600 flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-green-400"></span>Encaissements
+        </span>
+        <span class="text-sm font-semibold text-green-700">+{{ cash_in_period|floatformat:0 }} FCFA</span>
+      </div>
+      <div class="flex justify-between items-center py-2 border-b border-gray-100">
+        <span class="text-sm text-gray-600 flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-red-400"></span>Dépenses
+        </span>
+        <span class="text-sm font-semibold text-red-600">−{{ cash_out_period|floatformat:0 }} FCFA</span>
+      </div>
+      <div class="flex justify-between items-center py-2.5 -mx-4 px-4 {% if capital_periode_positif %}bg-green-50{% else %}bg-red-50{% endif %}">
+        <span class="text-sm font-bold {% if capital_periode_positif %}text-green-800{% else %}text-red-800{% endif %}">
+          Solde période
+        </span>
+        <span class="text-base font-bold {% if capital_periode_positif %}text-green-700{% else %}text-red-700{% endif %}">
+          {% if capital_periode >= 0 %}+{% endif %}{{ capital_periode|floatformat:0 }} FCFA
+        </span>
+      </div>
+    </div>
+  </div>
+
   <!-- Capital actuel (cumul tous les temps) -->
   <div class="card {% if capital_positif %}bg-green-50{% else %}bg-red-50{% endif %}">
     <div class="flex items-center justify-between">
