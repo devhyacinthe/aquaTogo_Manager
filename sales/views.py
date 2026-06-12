@@ -412,10 +412,17 @@ def sale_detail(request, pk):
 
 def _build_whatsapp_message(sale) -> str:
     date_fr = sale.sale_date.strftime("%d/%m/%Y")
-    lines = [f"*Commande AquaTogo* — {date_fr}"]
+
+    # Greeting
     if sale.client:
-        lines.append(f"Client : {sale.client.name}")
+        lines = [f"Bonjour Monsieur/Madame {sale.client.name},"]
+    else:
+        lines = ["Bonjour,"]
+
     lines.append("")
+    lines.append(f"Veuillez trouver ci-joint votre facture AquaTogo du {date_fr}.")
+    lines.append("")
+    lines.append("📋 *Récapitulatif :*")
     for item in sale.items.all():
         if item.product:
             name = item.product.name
@@ -425,10 +432,13 @@ def _build_whatsapp_message(sale) -> str:
             name = "Article supprimé"
         unit = f"{item.unit_price:,.0f}".replace(",", " ")
         total = f"{item.line_total:,.0f}".replace(",", " ")
-        lines.append(f"- {name} x{item.quantity} ({unit} FCFA) : *{total} FCFA*")
+        lines.append(f"  • {name} x{item.quantity} ({unit} FCFA) : *{total} FCFA*")
     lines.append("")
     total_fmt = f"{sale.total_amount:,.0f}".replace(",", " ")
     lines.append(f"*Total : {total_fmt} FCFA*")
+    lines.append("")
+    lines.append("Merci pour votre confiance !")
+    lines.append("— _Équipe AquaTogo_ 🐟")
     return "\n".join(lines)
 
 
