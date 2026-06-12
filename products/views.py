@@ -56,7 +56,7 @@ def product_list(request):
 
 @login_required
 def product_create(request):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
 
     if request.method == "POST":
@@ -170,7 +170,7 @@ def product_detail(request, pk):
 
 @login_required
 def product_edit(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
 
     product = get_object_or_404(Product.objects.select_related("category"), pk=pk)
@@ -201,7 +201,7 @@ def product_edit(request, pk):
 
 @login_required
 def product_delete(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
 
     if request.method != "POST":
@@ -217,7 +217,7 @@ def product_delete(request, pk):
 
 @login_required
 def product_archived(request):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
     products = (
         Product.objects.filter(is_active=False)
@@ -229,7 +229,7 @@ def product_archived(request):
 
 @login_required
 def product_unarchive(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
     if request.method != "POST":
         return redirect("products:archived")
@@ -242,6 +242,8 @@ def product_unarchive(request, pk):
 
 @login_required
 def product_adjust_stock(request, pk):
+    if not request.user.is_superuser:
+        raise PermissionDenied
     if request.method != "POST":
         return redirect("products:detail", pk=pk)
 
@@ -287,7 +289,7 @@ def product_adjust_stock(request, pk):
 
 @login_required
 def category_list(request):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
     cats = ProductCategory.objects.annotate(product_count=Count("products")).order_by("name")
     return render(request, "products/category_list.html", {"categories": cats})
@@ -295,7 +297,7 @@ def category_list(request):
 
 @login_required
 def category_create(request):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
     if request.method == "POST":
         form = ProductCategoryForm(request.POST)
@@ -310,7 +312,7 @@ def category_create(request):
 
 @login_required
 def category_edit(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
     cat = get_object_or_404(ProductCategory, pk=pk)
     if request.method == "POST":
@@ -326,7 +328,7 @@ def category_edit(request, pk):
 
 @login_required
 def category_delete(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
     if request.method != "POST":
         return redirect("products:category_list")

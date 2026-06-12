@@ -156,7 +156,7 @@ def client_settle_debt(request, pk):
 
     # ── Montant ───────────────────────────────────────────────────────────────
     try:
-        amount = Decimal(request.POST.get("amount", "0").strip())
+        amount = Decimal(request.POST.get("amount", "0").strip().replace(" ", "").replace("\u202f", ""))
     except InvalidOperation:
         amount = Decimal("0")
 
@@ -187,7 +187,7 @@ def client_settle_debt(request, pk):
     # ── Distribution sur les ventes impayées (plus anciennes en premier) ──────
     unpaid_sales = (
         client.sales
-        .filter(payment_status__in=["unpaid", "partial"])
+        .filter(status="active", payment_status__in=["unpaid", "partial"])
         .order_by("sale_date", "id")
     )
 
@@ -224,7 +224,7 @@ def client_settle_debt(request, pk):
 @login_required
 @require_POST
 def client_delete(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied
     client = get_object_or_404(Client, pk=pk)

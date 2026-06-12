@@ -117,7 +117,7 @@
 </div>
 
 <!-- Ajustement de stock -->
-{% if user_role != 'employe' %}
+{% if is_superuser %}
 <div class="card mb-4"
      x-data="{ action: 'add', qty: 1, loading: false, showConfirm: false, purchasePrice: parseFloat('{{ product.purchase_price }}'.replace(',', '.')) }">
   <h2 class="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -249,7 +249,7 @@
     </div>
   </div>
 </div>
-{% endif %}{# /user_role != employe — ajustement stock #}
+{% endif %}{# /is_superuser — ajustement stock #}
 
 <!-- Historique des mouvements de stock -->
 {% if stock_movements %}
@@ -389,7 +389,7 @@
 </div>
 
 <!-- Actions admin (edit / delete) -->
-{% if is_staff %}
+{% if is_superuser %}
 <div class="flex gap-3 mt-6" x-data="{ confirmDelete: false }">
   <a href="{% url 'products:edit' product.pk %}" class="btn-secondary flex-1 flex items-center justify-center gap-2 text-sm">
     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

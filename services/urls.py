@@ -16,6 +16,7 @@ urlpatterns = [
     path("executions/<int:pk>/confirmer/", views.execution_confirm, name="execution_confirm"),
     path("executions/<int:pk>/encaisser/", views.execution_collect_payment, name="execution_collect"),
     path("executions/<int:pk>/masquer/", views.execution_hide, name="execution_hide"),
+    path("executions/<int:pk>/retirer/", views.execution_remove, name="execution_remove"),
     path("executions/<int:pk>/facture/", views.execution_invoice, name="execution_invoice"),
     path("executions/calendrier/", views.calendar_week, name="calendar_week"),
     path("executions/calendrier/semaine/", views.calendar_week, name="calendar_week_filter"),

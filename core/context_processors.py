@@ -5,4 +5,4 @@ def user_role(request):
         role = profile.role if profile else "manager"
     else:
         role = None
-    return {"user_role": role}
+    return {"user_role": role, "is_superuser": request.user.is_superuser}

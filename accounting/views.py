@@ -56,6 +56,10 @@ def expense_list(request):
 
 @login_required
 def expense_create(request):
+    if not request.user.is_superuser:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+
     if request.method == "POST":
         form = ExpenseForm(request.POST)
         if form.is_valid():
@@ -76,6 +80,10 @@ def expense_create(request):
 
 @login_required
 def expense_edit(request, pk):
+    if not request.user.is_superuser:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+
     expense = get_object_or_404(Expense, pk=pk)
 
     if request.method == "POST":
@@ -99,6 +107,10 @@ def expense_edit(request, pk):
 
 @login_required
 def expense_delete(request, pk):
+    if not request.user.is_superuser:
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied
+
     if request.method != "POST":
         return redirect("accounting:list")
     expense = get_object_or_404(Expense, pk=pk)
@@ -224,7 +236,7 @@ def expense_export_excel(request):
 def accounting_report(request):
     from sales.models import Payment
 
-    periode = request.GET.get("periode", "month")
+    periode = request.GET.get("periode", "all")
     start, end, periode_label = _period_range(periode)
 
     _zero = Value(Decimal("0.00"))

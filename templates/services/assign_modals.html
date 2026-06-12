@@ -84,13 +84,36 @@
 
 {# ── Modal Nouveau Client ── #}
 <div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-50 bg-gray-900/60 flex items-end lg:items-center justify-center p-0 lg:p-4" @click.self="modal = null">
-  <div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl">
-    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100"><h3 class="font-semibold text-gray-900">Nouveau client</h3><button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg></button></div>
-    <div class="px-4 py-5 space-y-4">
+  <div x-show="modal === 'new_client'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" x-transition:enter-end="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-y-0 lg:scale-100 lg:opacity-100" x-transition:leave-end="translate-y-full lg:translate-y-0 lg:scale-95 lg:opacity-0" class="w-full bg-white rounded-t-2xl lg:rounded-2xl lg:max-w-md shadow-2xl flex flex-col max-h-[85vh]">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center">
+          <svg class="h-4 w-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z"/></svg>
+        </div>
+        <h3 class="font-semibold text-gray-900">Nouveau client</h3>
+      </div>
+      <button type="button" @click="modal = null" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="px-4 py-5 space-y-4 overflow-y-auto flex-1">
       <template x-if="newClientError"><p class="rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 font-medium" x-text="newClientError"></p></template>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Nom <span class="text-red-500">*</span></label><input type="text" x-model="newClientName" @keydown.enter="createClient()" placeholder="Nom du client" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" /></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Téléphone <span class="text-gray-400">(optionnel)</span></label><input type="tel" x-model="newClientPhone" @keydown.enter="createClient()" placeholder="+228 90 00 00 00" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" /></div>
-      <button type="button" @click="createClient()" :disabled="!newClientName.trim() || newClientSaving" class="w-full btn-primary py-3 font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><span x-text="newClientSaving ? 'Création…' : 'Créer le client'"></span></button>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Nom <span class="text-red-500">*</span></label>
+        <input type="text" x-model="newClientName" @keydown.enter="createClient()" placeholder="Nom du client" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Téléphone <span class="text-gray-400">(optionnel)</span></label>
+        <input type="tel" x-model="newClientPhone" @keydown.enter="createClient()" placeholder="+228 90 00 00 00" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Notes <span class="text-gray-400">(optionnel)</span></label>
+        <textarea x-model="newClientNotes" rows="2" placeholder="Adresse, préférences, localisation…" class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors resize-none"></textarea>
+      </div>
+    </div>
+    <div class="px-4 pb-5 pt-2 shrink-0">
+      <button type="button" @click="createClient()" :disabled="!newClientName.trim() || newClientSaving" class="w-full btn-primary py-3 font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+        <svg x-show="!newClientSaving" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        <span x-text="newClientSaving ? 'Création en cours…' : 'Créer le client'"></span>
+      </button>
     </div>
   </div>
 </div>

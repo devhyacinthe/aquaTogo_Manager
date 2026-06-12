@@ -19,12 +19,14 @@
         </svg>
         Excel
       </a>
+      {% if is_superuser %}
       <a href="{% url 'accounting:create' %}" class="btn-primary">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
         </svg>
         Nouvelle
       </a>
+      {% endif %}
     </div>
   </div>
 
@@ -115,6 +117,7 @@
         <p class="font-bold text-gray-900">{{ expense.amount|floatformat:0 }} FCFA</p>
       </div>
 
+      {% if is_superuser %}
       <div class="flex items-center gap-1 shrink-0">
         <a href="{% url 'accounting:edit' expense.pk %}"
            class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -136,6 +139,7 @@
           </button>
         </form>
       </div>
+      {% endif %}
 
     </div>
     {% endfor %}
@@ -154,7 +158,7 @@
       {% if category_filter %}Pour cette catégorie sur la période sélectionnée.
       {% else %}Commencez par enregistrer votre première dépense.{% endif %}
     </p>
-    {% if not category_filter %}
+    {% if not category_filter and is_superuser %}
     <div class="mt-4">
       <a href="{% url 'accounting:create' %}" class="btn-primary">Ajouter une dépense</a>
     </div>

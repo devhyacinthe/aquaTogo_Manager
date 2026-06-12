@@ -22,7 +22,7 @@
         </svg>
         Assigner une prestation 
       </a>
-      {% if is_staff %}
+      {% if is_superuser %}
       <a href="{% url 'services:create' %}" class="btn-primary shrink-0">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
@@ -124,7 +124,7 @@
     </div>
     <h3 class="text-base font-semibold text-gray-900">Aucune prestation</h3>
     <p class="text-sm text-gray-500 mt-1">Commencez par ajouter un service proposé à vos clients.</p>
-    {% if is_staff %}
+    {% if is_superuser %}
     <div class="mt-4">
       <a href="{% url 'services:create' %}" class="btn-primary">Créer une prestation</a>
     </div>

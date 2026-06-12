@@ -251,7 +251,7 @@
   {% endif %}
 
   <!-- Staff actions -->
-  {% if is_staff %}
+  {% if is_superuser %}
   <div class="flex gap-3 flex-wrap pt-2 pb-6">
     <a href="{% url 'services:edit' service.pk %}" class="btn-secondary flex-1 sm:flex-none justify-center">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">

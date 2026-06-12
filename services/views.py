@@ -81,7 +81,7 @@ def service_list(request):
 
 @login_required
 def service_create(request):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
 
     if request.method == "POST":
@@ -162,7 +162,7 @@ def service_detail(request, pk):
 
 @login_required
 def service_edit(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
 
     service = get_object_or_404(Service, pk=pk)
@@ -189,7 +189,7 @@ def service_edit(request, pk):
 @login_required
 @require_POST
 def service_delete(request, pk):
-    if not request.user.is_staff:
+    if not request.user.is_superuser:
         raise PermissionDenied
 
     service = get_object_or_404(Service, pk=pk)
@@ -364,6 +364,62 @@ def execution_list(request):
         "url_name": "execution_list",
     }
     return render(request, "services/execution_list.html", context)
+
+
+@login_required
+def execution_active(request):
+    """Liste tous les tours actifs groupés par client."""
+    executions = list(
+        ServiceExecution.objects
+        .filter(is_completed=False)
+        .select_related("client", "service", "sale_item__sale")
+        .order_by("client__name", "service__name", "execution_date")
+    )
+    _assign_tour_numbers(executions)
+
+    # Group by client → service
+    clients_data = {}
+    for ex in executions:
+        c = ex.client
+        if c.pk not in clients_data:
+            clients_data[c.pk] = {
+                "client": c,
+                "services": {},
+            }
+        s = ex.service
+        key = (c.pk, s.pk)
+        if key not in clients_data[c.pk]["services"]:
+            clients_data[c.pk]["services"][key] = {
+                "service": s,
+                "executions": [],
+                "payment_status": None,
+                "sale": None,
+            }
+        clients_data[c.pk]["services"][key]["executions"].append(ex)
+        if ex.sale_item and ex.sale_item.sale:
+            clients_data[c.pk]["services"][key]["sale"] = ex.sale_item.sale
+            clients_data[c.pk]["services"][key]["payment_status"] = ex.sale_item.sale.payment_status
+
+    # Flatten for template
+    clients_list = []
+    for data in clients_data.values():
+        svc_list = []
+        for svc_data in data["services"].values():
+            svc_list.append(svc_data)
+        data["services_list"] = svc_list
+        data["total_services"] = len(svc_list)
+        data["total_tours"] = sum(len(sd["executions"]) for sd in svc_list)
+        clients_list.append(data)
+    clients_list.sort(key=lambda x: x["client"].name)
+
+    context = {
+        "clients_list": clients_list,
+        "total_clients": len(clients_list),
+        "total_executions": len(executions),
+        "app_name": "services",
+        "url_name": "execution_active",
+    }
+    return render(request, "services/execution_active.html", context)
 
 
 @login_required
@@ -776,7 +832,7 @@ def execution_collect_payment(request, pk):
 
     sale = execution.sale_item.sale
 
-    raw_amount = request.POST.get("payment_amount", "").strip()
+    raw_amount = request.POST.get("payment_amount", "").strip().replace(" ", "").replace("\u202f", "")
     payment_method = request.POST.get("payment_method", "cash")
 
     try:
@@ -836,16 +892,326 @@ def execution_hide(request, pk):
 
 
 @login_required
-def execution_invoice(request, pk):
-    """Redirige vers la facture PDF de la vente liée à cette exécution."""
+@require_POST
+def execution_remove(request, pk):
+    """Retirer une exécution spécifique du programme (doublon / erreur).
+    Ne touche pas aux autres tours ni à la vente — garde l'historique."""
     execution = get_object_or_404(
-        ServiceExecution.objects.select_related("sale_item__sale"),
+        ServiceExecution.objects.select_related("client", "service"),
+        pk=pk,
+    )
+
+    client_name = execution.client.name if execution.client else "client"
+    service_name = execution.service.name if execution.service else "prestation"
+    tour = getattr(execution, "start_tour", None) or ""
+    tour_label = f" (Tour {tour})" if tour else ""
+
+    execution.delete()
+
+    messages.success(
+        request,
+        f"« {service_name} »{tour_label} pour {client_name} retiré du programme.",
+    )
+
+    next_url = request.POST.get("next", "")
+    if next_url:
+        return redirect(next_url)
+    return redirect("services:execution_list")
+
+
+@login_required
+def execution_invoice(request, pk):
+    """Génère une facture PDF dédiée aux prestations du client."""
+    import os
+    from io import BytesIO
+    from django.conf import settings as django_settings
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image,
+    )
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+
+    execution = get_object_or_404(
+        ServiceExecution.objects.select_related(
+            "sale_item__sale__client", "sale_item__sale__created_by",
+            "service", "client",
+        ),
         pk=pk,
     )
     if not execution.sale_item or not execution.sale_item.sale:
         messages.error(request, "Aucune vente associée à cette prestation.")
         return redirect("services:detail", pk=execution.service_id)
-    return redirect("sales:invoice_pdf", pk=execution.sale_item.sale.pk)
+
+    sale = execution.sale_item.sale
+    client = execution.client
+    service = execution.service
+
+    # Tour number
+    execs = list(
+        ServiceExecution.objects
+        .filter(client=client, service=service, is_completed=False)
+        .select_related("service")
+        .order_by("execution_date")
+    )
+    _assign_tour_numbers(execs)
+    tour_number = None
+    for ex in execs:
+        if ex.pk == execution.pk:
+            tour_number = getattr(ex, "tour_number", None)
+            break
+    if tour_number is None:
+        tour_number = execution.start_tour or 1
+
+    # Only service items from this sale
+    service_items = list(sale.items.filter(service__isnull=False).select_related("service"))
+    payments = list(sale.payments.order_by("payment_date"))
+
+    # ── PDF ────────────────────────────────────────────────────────────────────
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+        leftMargin=2.5 * cm, rightMargin=2.5 * cm,
+    )
+
+    brand = colors.HexColor("#0EA5E9")
+    gray = colors.HexColor("#6B7280")
+    light = colors.HexColor("#F0F9FF")
+
+    def _p(text, **kw):
+        return Paragraph(text, ParagraphStyle("_", **kw))
+
+    def _fmt(n):
+        return f"{n:,.0f}".replace(",", "\u202f")
+
+    story = []
+
+    # ── En-tête ────────────────────────────────────────────────────────────────
+    logo_path = os.path.join(django_settings.BASE_DIR, "static", "img", "logo.png")
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=1.4 * cm, height=1.4 * cm)
+        name_cell = _p(
+            '<font size="18" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="9" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+        left_col = Table([[logo_cell, name_cell]], colWidths=[1.6 * cm, 8 * cm])
+        left_col.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (1, 0), (1, 0), 6)]))
+    else:
+        left_col = _p(
+            '<font size="18" color="#0EA5E9"><b>AquaTogo</b></font><br/>'
+            '<font size="9" color="#6B7280">Produits et services d\'aquariophilie</font>',
+        )
+
+    header_data = [[
+        left_col,
+        _p(f'<font size="9" color="#6B7280">Date : {sale.sale_date.strftime("%d/%m/%Y")}<br/>'
+           f'Vendeur : {sale.created_by.get_full_name() or sale.created_by.username}</font>',
+           alignment=TA_RIGHT),
+    ]]
+    ht = Table(header_data, colWidths=[10 * cm, 7.5 * cm])
+    ht.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    story.append(ht)
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=brand))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Numéro + Client ────────────────────────────────────────────────────────
+    client_name = client.name if client else "Client anonyme"
+    client_phone = getattr(client, "phone", "") if client else ""
+    status_colors = {"paid": "#15803D", "partial": "#D97706", "unpaid": "#DC2626"}
+    s_color = status_colors.get(sale.payment_status, "#374151")
+    status_labels = {"paid": "Payé", "partial": "Partiellement payé", "unpaid": "Non payé"}
+    s_label = status_labels.get(sale.payment_status, sale.payment_status)
+
+    info_data = [[
+        _p(f'<font size="14"><b>FACTURE PRESTATION</b></font><br/>'
+           f'<font size="10">N° {sale.pk:04d}</font><br/>'
+           f'<font size="9" color="{s_color}"><b>● {s_label}</b></font>'),
+        _p('<b>Client</b><br/>'
+           f'<font size="10">{client_name}</font>'
+           + (f'<br/><font size="9" color="#6B7280">Tél : {client_phone}</font>' if client_phone else "")),
+    ]]
+    it = Table(info_data, colWidths=[9 * cm, 8.5 * cm])
+    it.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (1, 0), (1, 0), light),
+        ("LEFTPADDING", (1, 0), (1, 0), 10),
+        ("TOPPADDING", (1, 0), (1, 0), 8),
+        ("BOTTOMPADDING", (1, 0), (1, 0), 8),
+        ("RIGHTPADDING", (1, 0), (1, 0), 10),
+    ]))
+    story.append(it)
+    story.append(Spacer(1, 0.7 * cm))
+
+    # ── Tableau des prestations ────────────────────────────────────────────────
+    rows = [[
+        _p("<b>Prestation</b>", fontSize=9),
+        _p("<b>Tour</b>", fontSize=9, alignment=TA_CENTER),
+        _p("<b>Qté</b>", fontSize=9, alignment=TA_RIGHT),
+        _p("<b>Prix unit. (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+        _p("<b>Total (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
+    ]]
+
+    service_total = Decimal("0.00")
+    for item in service_items:
+        name = item.service.name if item.service else (item.label or "—")
+        # Show the tour number for the matching service
+        tour_label = f"Tour {tour_number}" if item.service_id == service.pk else "—"
+        rows.append([
+            _p(name, fontSize=9),
+            _p(tour_label, fontSize=9, alignment=TA_CENTER),
+            _p(str(item.quantity), fontSize=9, alignment=TA_RIGHT),
+            _p(_fmt(item.unit_price), fontSize=9, alignment=TA_RIGHT),
+            _p(_fmt(item.line_total), fontSize=9, alignment=TA_RIGHT),
+        ])
+        service_total += item.line_total
+
+    rows.append([
+        "", "", "",
+        _p("<b>TOTAL</b>", fontSize=10, alignment=TA_RIGHT),
+        _p(f"<b>{_fmt(service_total)} FCFA</b>", fontSize=10, alignment=TA_RIGHT),
+    ])
+
+    at = Table(rows, colWidths=[7 * cm, 2.5 * cm, 1.5 * cm, 3.5 * cm, 3.5 * cm])
+    at.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), brand),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("BACKGROUND", (0, -1), (-1, -1), light),
+        ("LINEABOVE", (0, -1), (-1, -1), 1, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(at)
+
+    # ── Badge PAYÉ (sous le total, aligné à droite) ───────────────────────────
+    if sale.payment_status == "paid":
+        story.append(Spacer(1, 0.3 * cm))
+        badge = Table(
+            [[_p('<font color="#15803D"><b>PAYÉ</b></font>', fontSize=11, alignment=TA_CENTER)]],
+            colWidths=[3 * cm],
+            rowHeights=[0.8 * cm],
+        )
+        badge.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BORDER", (0, 0), (-1, -1), 1.2, colors.HexColor("#15803D")),
+            ("ROUNDEDCORNERS", [6, 6, 6, 6]),
+        ]))
+        # Aligner le badge à droite
+        wrapper = Table([[""  , badge]], colWidths=[13.5 * cm, 3 * cm])
+        wrapper.setStyle(TableStyle([
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(wrapper)
+
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Historique des impayés du client ────────────────────────────────────────
+    # Affiché uniquement si le client a d'AUTRES dettes (pas juste la facture en cours)
+    outstanding = Decimal("0")
+    has_other_debts = False
+    if client:
+        from sales.models import Sale as _Sale
+        has_other_debts = (
+            _Sale.objects
+            .filter(client=client, status="active", payment_status__in=["unpaid", "partial"])
+            .exclude(pk=sale.pk)
+            .exists()
+        )
+        if has_other_debts:
+            # Afficher TOUTES les dettes y compris la facture actuelle
+            all_unpaid = list(
+                _Sale.objects
+                .filter(client=client, status="active", payment_status__in=["unpaid", "partial"])
+                .prefetch_related("items__product", "items__service", "payments")
+                .order_by("sale_date", "id")
+            )
+            outstanding = sum(s.remaining_balance for s in all_unpaid)
+            if outstanding > 0:
+                story.append(Spacer(1, 0.5 * cm))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))
+                story.append(Spacer(1, 0.3 * cm))
+                story.append(_p(
+                    '<font color="#DC2626"><b>Historique des impayés — Compte client</b></font>',
+                    fontSize=10,
+                ))
+                story.append(Spacer(1, 0.25 * cm))
+
+                RED     = colors.HexColor("#DC2626")
+                RED_BG  = colors.HexColor("#FEE2E2")
+                RED_ROW = colors.HexColor("#FFF7F7")
+
+                debt_rows = [[
+                    _p("<b>Date</b>",           fontSize=8),
+                    _p("<b>Articles</b>",        fontSize=8),
+                    _p("<b>Montant</b>",        fontSize=8, alignment=TA_RIGHT),
+                    _p("<b>Payé</b>",           fontSize=8, alignment=TA_RIGHT),
+                    _p("<b>Reste dû</b>",       fontSize=8, alignment=TA_RIGHT),
+                ]]
+                for s in all_unpaid:
+                    # Build item details
+                    details_parts = []
+                    for si in s.items.all():
+                        if si.product:
+                            details_parts.append(f"{si.product.name} ×{si.quantity}")
+                        elif si.service:
+                            details_parts.append(f"{si.service.name} ×{si.quantity}")
+                        elif si.label:
+                            details_parts.append(f"{si.label} ×{si.quantity}")
+                    details_text = ", ".join(details_parts) if details_parts else "—"
+
+                    paid = s.total_amount - s.remaining_balance
+                    debt_rows.append([
+                        _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
+                        _p(details_text, fontSize=7),
+                        _p(_fmt(s.total_amount), fontSize=8, alignment=TA_RIGHT),
+                        _p(_fmt(paid), fontSize=8, alignment=TA_RIGHT),
+                        _p(f'<font color="#DC2626">{_fmt(s.remaining_balance)}</font>',
+                           fontSize=8, alignment=TA_RIGHT),
+                    ])
+                debt_rows.append([
+                    "", "", "",
+                    _p("<b>TOTAL DÛ</b>", fontSize=9, alignment=TA_RIGHT),
+                    _p(f'<font color="#DC2626"><b>{_fmt(outstanding)} FCFA</b></font>',
+                       fontSize=9, alignment=TA_RIGHT),
+                ])
+
+                dt = Table(debt_rows, colWidths=[2.2*cm, 6.3*cm, 2.5*cm, 2.5*cm, 2*cm])
+                dt.setStyle(TableStyle([
+                    ("BACKGROUND",    (0, 0), (-1, 0),   RED_BG),
+                    ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.HexColor("#991B1B")),
+                    ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, RED_ROW]),
+                    ("BACKGROUND",    (0, -1),(-1, -1),  RED_BG),
+                    ("TOPPADDING",    (0, 0), (-1, -1),  5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
+                    ("LEFTPADDING",   (0, 0), (-1, -1),  6),
+                    ("RIGHTPADDING",  (0, 0), (-1, -1),  6),
+                    ("GRID",          (0, 0), (-1, -1),  0.3, colors.HexColor("#FECACA")),
+                    ("LINEABOVE",     (0, -1),(-1, -1),  1, RED),
+                ]))
+                story.append(dt)
+
+    # ── Pied de page ──────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1.2 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#E5E7EB")))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(_p("AquaTogo — Merci pour votre confiance !",
+                     fontSize=8, textColor=gray, alignment=TA_CENTER))
+
+    doc.build(story)
+    buffer.seek(0)
+
+    filename = f"Facture_Prestation_{sale.pk:04d}_{client_name.replace(' ', '_')}_{sale.sale_date.strftime('%Y%m%d')}.pdf"
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 # ── Tâches ────────────────────────────────────────────────────────────────────

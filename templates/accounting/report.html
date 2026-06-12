@@ -263,9 +263,11 @@
     <a href="{% url 'accounting:list' %}?periode={{ periode }}" class="btn-secondary flex-1 justify-center">
       Voir les dépenses
     </a>
+    {% if is_superuser %}
     <a href="{% url 'accounting:create' %}" class="btn-primary flex-1 justify-center">
       Nouvelle dépense
     </a>
+    {% endif %}
   </div>
 
   <!-- Télécharger le rapport PDF -->

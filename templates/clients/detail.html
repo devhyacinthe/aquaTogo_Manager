@@ -63,7 +63,7 @@
   <!-- Solder la dette -->
   {% if client.has_debt %}
   <div class="rounded-2xl border border-red-200 bg-red-50 overflow-hidden"
-       x-data="{ open: false, amount: '{{ client.outstanding_balance|floatformat:0 }}', method: 'cash', loading: false }">
+       x-data="{ open: false, amount: '{{ client.outstanding_balance|stringformat:"d" }}', method: 'cash', loading: false }">
 
     <button type="button" @click="open = !open"
             class="w-full flex items-center justify-between gap-3 px-4 py-3 text-left">
@@ -102,7 +102,7 @@
                      name="amount"
                      x-model="amount"
                      min="1"
-                     max="{{ client.outstanding_balance|floatformat:0 }}"
+                     max="{{ client.outstanding_balance|stringformat:"d" }}"
                      step="1"
                      required
                      class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 pr-16 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors"/>
@@ -261,7 +261,12 @@
           </svg>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-gray-900 truncate">{{ ex.service.name }}</p>
+          <p class="text-sm font-medium text-gray-900 truncate">
+            {{ ex.service.name }}
+            {% if ex.tours_per_month %}
+              <span class="text-xs text-gray-400 font-normal">— Tour {{ ex.start_tour|default:"1" }}/{{ ex.tours_per_month }}</span>
+            {% endif %}
+          </p>
           <p class="text-xs text-gray-400 mt-0.5">{{ ex.execution_date|date:"d/m/Y" }}</p>
         </div>
         {% if ex.is_completed %}
@@ -284,7 +289,7 @@
       Modifier
     </a>
 
-    {% if is_staff %}
+    {% if is_superuser %}
     <template x-if="!confirmDelete">
       <button type="button" @click="confirmDelete = true"
               class="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-100 transition-colors">

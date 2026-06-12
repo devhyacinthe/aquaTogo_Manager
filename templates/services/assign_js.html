@@ -3,7 +3,7 @@ function serviceAssign() {
   return {
     services: JSON.parse(document.getElementById('d-services').textContent),
     clientQuery: '', clientTimeout: null, clientResults: [], selectedClient: null,
-    newClientName: '', newClientPhone: '', newClientSaving: false, newClientError: '',
+    newClientName: '', newClientPhone: '', newClientNotes: '', newClientSaving: false, newClientError: '',
     modal: null, searchQuery: '', pendingService: null, pendingTours: null, pendingStartTour: null,
     cartError: '', cartErrorTimer: null,
     toursOptions: [
@@ -36,13 +36,13 @@ function serviceAssign() {
     },
     selectClient(c) { this.selectedClient = c; this.clientQuery = c.name; this.clientResults = []; },
     clearClient() { this.selectedClient = null; this.clientQuery = ''; this.clientResults = []; },
-    openNewClientModal() { this.newClientName = this.clientQuery.trim(); this.newClientPhone = ''; this.newClientError = ''; this.clientResults = []; this.modal = 'new_client'; },
+    openNewClientModal() { this.newClientName = this.clientQuery.trim(); this.newClientPhone = ''; this.newClientNotes = ''; this.newClientError = ''; this.clientResults = []; this.modal = 'new_client'; },
     async createClient() {
       const name = this.newClientName.trim();
       if (!name || this.newClientSaving) return;
       this.newClientSaving = true; this.newClientError = '';
       try {
-        const r = await fetch('/ventes/api/clients/creer/', { method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value}, body:JSON.stringify({name, phone:this.newClientPhone.trim()}) });
+        const r = await fetch('/ventes/api/clients/creer/', { method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('[name=csrfmiddlewaretoken]').value}, body:JSON.stringify({name, phone:this.newClientPhone.trim(), notes:this.newClientNotes.trim()}) });
         const data = await r.json();
         if (!r.ok) { this.newClientError = data.error||'Erreur.'; return; }
         this.selectClient(data); this.modal = null;

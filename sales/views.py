@@ -904,7 +904,7 @@ def sale_invoice_pdf(request, pk):
         ("RIGHTPADDING", (1, 0), (1, 0), 10),
     ]))
     story.append(it)
-    story.append(Spacer(1, 0.7 * cm))
+    story.append(Spacer(1, 0.6 * cm))
 
     # ── Tableau articles ───────────────────────────────────────────────────────
     def _fmt(n):
@@ -943,122 +943,115 @@ def sale_invoice_pdf(request, pk):
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(at)
+
+    # ── Badge PAYÉ (sous le total, aligné à droite) ───────────────────────────
+    if sale.payment_status == "paid":
+        story.append(Spacer(1, 0.3 * cm))
+        badge = Table(
+            [[_p('<font color="#15803D"><b>PAYÉ</b></font>', fontSize=11, alignment=TA_CENTER)]],
+            colWidths=[3 * cm],
+            rowHeights=[0.8 * cm],
+        )
+        badge.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BORDER", (0, 0), (-1, -1), 1.2, colors.HexColor("#15803D")),
+            ("ROUNDEDCORNERS", [6, 6, 6, 6]),
+        ]))
+        # Aligner le badge à droite
+        wrapper = Table([[""  , badge]], colWidths=[13.5 * cm, 3 * cm])
+        wrapper.setStyle(TableStyle([
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(wrapper)
+
     story.append(Spacer(1, 0.6 * cm))
 
-    # ── Paiements + Solde dû ──────────────────────────────────────────────────
-    # Afficher la section dès qu'il y a des paiements OU un solde restant dû
-    remaining = sale.remaining_balance
-    if payments or remaining > 0:
-        story.append(_p("<b>Paiements reçus</b>", fontSize=10))
-        story.append(Spacer(1, 0.25 * cm))
 
-        pay_rows = [[
-            _p("<b>Date</b>", fontSize=9),
-            _p("<b>Méthode</b>", fontSize=9),
-            _p("<b>Montant (FCFA)</b>", fontSize=9, alignment=TA_RIGHT),
-        ]]
-        for p in payments:
-            pay_rows.append([
-                _p(p.payment_date.strftime("%d/%m/%Y"), fontSize=9),
-                _p(p.get_payment_method_display(), fontSize=9),
-                _p(_fmt(p.amount), fontSize=9, alignment=TA_RIGHT),
-            ])
-
-        if remaining > 0:
-            label = "<b>Solde dû</b>" if not payments else "<b>Reste à payer</b>"
-            pay_rows.append([
-                "",
-                _p(label, fontSize=9),
-                _p(f'<font color="#DC2626"><b>{_fmt(remaining)} FCFA</b></font>',
-                   fontSize=9, alignment=TA_RIGHT),
-            ])
-
-        n_rows = len(pay_rows)
-        pt = Table(pay_rows, colWidths=[4 * cm, 7 * cm, 4 * cm])
-        ts = [
-            ("BACKGROUND",    (0, 0),  (-1, 0),       colors.HexColor("#F1F5F9")),
-            ("FONTNAME",      (0, 0),  (-1, 0),       "Helvetica-Bold"),
-            ("ROWBACKGROUNDS",(0, 1),  (-1, -1),      [colors.white, colors.HexColor("#F8FAFC")]),
-            ("TOPPADDING",    (0, 0),  (-1, -1),      5),
-            ("BOTTOMPADDING", (0, 0),  (-1, -1),      5),
-            ("LEFTPADDING",   (0, 0),  (-1, -1),      8),
-            ("RIGHTPADDING",  (0, 0),  (-1, -1),      8),
-            ("ALIGN",         (2, 0),  (2, -1),       "RIGHT"),
-        ]
-        # Ligne "Solde dû" / "Reste à payer" : fond rouge clair
-        if remaining > 0:
-            ts += [
-                ("BACKGROUND",    (0, n_rows - 1), (-1, n_rows - 1), colors.HexColor("#FEF2F2")),
-                ("LINEABOVE",     (0, n_rows - 1), (-1, n_rows - 1), 0.5, colors.HexColor("#FCA5A5")),
-            ]
-        pt.setStyle(TableStyle(ts))
-        story.append(pt)
-
-    # ── Historique des impayés du client ──────────────────────────────────────
+    # ── Historique des impayés du client ────────────────────────────────────────
+    # Affiché uniquement si le client a d'AUTRES dettes (pas juste la facture en cours)
+    outstanding = Decimal("0")
+    has_other_debts = False
     if sale.client:
-        unpaid_sales = list(
+        has_other_debts = (
             sale.client.sales
             .filter(status="active", payment_status__in=["unpaid", "partial"])
-            .prefetch_related("payments")
-            .order_by("sale_date")
+            .exclude(pk=sale.pk)
+            .exists()
         )
-        # Total calculé depuis les lignes affichées (cohérence garantie)
-        outstanding = sum(s.remaining_balance for s in unpaid_sales)
-        if outstanding > 0 and unpaid_sales:
-            story.append(Spacer(1, 0.5 * cm))
-            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))
-            story.append(Spacer(1, 0.3 * cm))
-            story.append(_p(
-                '<font color="#DC2626"><b>Historique des impayés — Compte client</b></font>',
-                fontSize=10,
-            ))
-            story.append(Spacer(1, 0.25 * cm))
+        if has_other_debts:
+            # Afficher TOUTES les dettes y compris la facture actuelle
+            all_unpaid = list(
+                sale.client.sales
+                .filter(status="active", payment_status__in=["unpaid", "partial"])
+                .prefetch_related("items__product", "items__service", "payments")
+                .order_by("sale_date", "id")
+            )
+            outstanding = sum(s.remaining_balance for s in all_unpaid)
+            if outstanding > 0:
+                story.append(Spacer(1, 0.5 * cm))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))
+                story.append(Spacer(1, 0.3 * cm))
+                story.append(_p(
+                    '<font color="#DC2626"><b>Historique des impayés — Compte client</b></font>',
+                    fontSize=10,
+                ))
+                story.append(Spacer(1, 0.25 * cm))
 
-            RED     = colors.HexColor("#DC2626")
-            RED_BG  = colors.HexColor("#FEE2E2")
-            RED_ROW = colors.HexColor("#FFF7F7")
+                RED     = colors.HexColor("#DC2626")
+                RED_BG  = colors.HexColor("#FEE2E2")
+                RED_ROW = colors.HexColor("#FFF7F7")
 
-            debt_rows = [[
-                _p("<b>Date</b>",           fontSize=8),
-                _p("<b>Facture</b>",        fontSize=8),
-                _p("<b>Montant (FCFA)</b>", fontSize=8, alignment=TA_RIGHT),
-                _p("<b>Payé (FCFA)</b>",    fontSize=8, alignment=TA_RIGHT),
-                _p("<b>Reste dû (FCFA)</b>",fontSize=8, alignment=TA_RIGHT),
-            ]]
-            for s in unpaid_sales:
-                paid = s.total_amount - s.remaining_balance
-                label = f"N° {s.pk:04d}"
-                if s.pk == sale.pk:
-                    label += "  ← présente facture"
+                debt_rows = [[
+                    _p("<b>Date</b>",           fontSize=8),
+                    _p("<b>Articles</b>",       fontSize=8),
+                    _p("<b>Montant</b>",        fontSize=8, alignment=TA_RIGHT),
+                    _p("<b>Payé</b>",           fontSize=8, alignment=TA_RIGHT),
+                    _p("<b>Reste dû</b>",       fontSize=8, alignment=TA_RIGHT),
+                ]]
+                for s in all_unpaid:
+                    # Build item details
+                    details_parts = []
+                    for si in s.items.all():
+                        if si.product:
+                            details_parts.append(f"{si.product.name} ×{si.quantity}")
+                        elif si.service:
+                            details_parts.append(f"{si.service.name} ×{si.quantity}")
+                        elif si.label:
+                            details_parts.append(f"{si.label} ×{si.quantity}")
+                    details_text = ", ".join(details_parts) if details_parts else "—"
+
+                    paid = s.total_amount - s.remaining_balance
+                    debt_rows.append([
+                        _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
+                        _p(details_text, fontSize=7),
+                        _p(_fmt(s.total_amount), fontSize=8, alignment=TA_RIGHT),
+                        _p(_fmt(paid), fontSize=8, alignment=TA_RIGHT),
+                        _p(f'<font color="#DC2626">{_fmt(s.remaining_balance)}</font>',
+                           fontSize=8, alignment=TA_RIGHT),
+                    ])
                 debt_rows.append([
-                    _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
-                    _p(label, fontSize=8),
-                    _p(_fmt(s.total_amount),     fontSize=8, alignment=TA_RIGHT),
-                    _p(_fmt(paid),               fontSize=8, alignment=TA_RIGHT),
-                    _p(f'<font color="#DC2626">{_fmt(s.remaining_balance)}</font>',
-                       fontSize=8, alignment=TA_RIGHT),
+                    "", "", "",
+                    _p("<b>TOTAL DÛ</b>", fontSize=9, alignment=TA_RIGHT),
+                    _p(f'<font color="#DC2626"><b>{_fmt(outstanding)} FCFA</b></font>',
+                       fontSize=9, alignment=TA_RIGHT),
                 ])
-            debt_rows.append([
-                "", "", "",
-                _p("<b>TOTAL DÛ</b>", fontSize=9, alignment=TA_RIGHT),
-                _p(f'<font color="#DC2626"><b>{_fmt(outstanding)} FCFA</b></font>',
-                   fontSize=9, alignment=TA_RIGHT),
-            ])
 
-            dt = Table(debt_rows, colWidths=[3*cm, 4.5*cm, 3*cm, 2.5*cm, 3.5*cm])
-            dt.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, 0),   RED_BG),
-                ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.HexColor("#991B1B")),
-                ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, RED_ROW]),
-                ("BACKGROUND",    (0, -1),(-1, -1),  RED_BG),
-                ("TOPPADDING",    (0, 0), (-1, -1),  5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
-                ("LEFTPADDING",   (0, 0), (-1, -1),  8),
-                ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
-                ("GRID",          (0, 0), (-1, -1),  0.3, colors.HexColor("#FECACA")),
-                ("LINEABOVE",     (0, -1),(-1, -1),  1, RED),
-            ]))
-            story.append(dt)
+                dt = Table(debt_rows, colWidths=[2.2*cm, 6.3*cm, 2.5*cm, 2.5*cm, 2*cm])
+                dt.setStyle(TableStyle([
+                    ("BACKGROUND",    (0, 0), (-1, 0),   RED_BG),
+                    ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.HexColor("#991B1B")),
+                    ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, RED_ROW]),
+                    ("BACKGROUND",    (0, -1),(-1, -1),  RED_BG),
+                    ("TOPPADDING",    (0, 0), (-1, -1),  5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
+                    ("LEFTPADDING",   (0, 0), (-1, -1),  6),
+                    ("RIGHTPADDING",  (0, 0), (-1, -1),  6),
+                    ("GRID",          (0, 0), (-1, -1),  0.3, colors.HexColor("#FECACA")),
+                    ("LINEABOVE",     (0, -1),(-1, -1),  1, RED),
+                ]))
+                story.append(dt)
 
     # ── Pied de page ──────────────────────────────────────────────────────────
     story.append(Spacer(1, 1.2 * cm))
@@ -1067,30 +1060,7 @@ def sale_invoice_pdf(request, pk):
     story.append(_p("AquaTogo — Merci pour votre confiance !",
                     fontSize=8, textColor=gray, alignment=TA_CENTER))
 
-    if sale.payment_status == "paid":
-        def _draw_paid_stamp(canvas, doc):
-            # Police 62pt : cap-height ≈ 45pt, baseline → top ≈ 45pt
-            # Rect height=72 → top at 36, center at 0
-            # baseline = center − cap_height/2 = 0 − 22 = −22 → top = -22+45 = 23 < 36 ✓
-            canvas.saveState()
-            canvas.setFillAlpha(0.30)
-            canvas.setStrokeAlpha(0.30)
-            stamp_green = colors.HexColor("#15803D")
-            canvas.setFillColor(stamp_green)
-            canvas.setStrokeColor(stamp_green)
-            canvas.setLineWidth(5)
-            canvas.setFont("Helvetica-Bold", 62)
-            w, h = A4
-            canvas.translate(w / 2, h / 2)
-            canvas.rotate(42)
-            # Rect centré verticalement sur 0 : de -36 à +36 (height=72)
-            canvas.roundRect(-108, -36, 216, 72, 10, fill=0, stroke=1)
-            # Baseline à -22 : cap top ≈ -22+45=23, bien dans le rect
-            canvas.drawCentredString(0, -22, "PAYÉ")
-            canvas.restoreState()
-        doc.build(story, onFirstPage=_draw_paid_stamp, onLaterPages=_draw_paid_stamp)
-    else:
-        doc.build(story)
+    doc.build(story)
     buffer.seek(0)
 
     filename = f"Facture_AquaTogo_{sale.pk:04d}_{sale.sale_date.strftime('%Y%m%d')}.pdf"

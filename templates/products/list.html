@@ -12,7 +12,7 @@
     <p class="text-sm text-gray-500 mt-0.5">Catalogue & gestion du stock</p>
   </div>
   <div class="flex items-center gap-2">
-    {% if is_staff %}
+    {% if is_superuser %}
     <a href="{% url 'products:category_list' %}" class="btn-secondary text-sm">Catégories</a>
     <a href="{% url 'products:archived' %}" class="btn-secondary text-sm flex items-center gap-1">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -200,7 +200,7 @@
   {% else %}
   <h3 class="text-base font-semibold text-gray-900 mb-1">Aucun produit</h3>
   <p class="text-sm text-gray-500 max-w-xs">Le catalogue est vide pour ce filtre.</p>
-  {% if is_staff %}
+  {% if is_superuser %}
   <a href="{% url 'products:create' %}" class="mt-4 btn-primary text-sm">Ajouter un produit</a>
   {% endif %}
   {% endif %}
