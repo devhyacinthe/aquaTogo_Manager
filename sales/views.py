@@ -155,8 +155,12 @@ def sale_list(request):
             grouped_sales[key]["has_unpaid"] = True
     grouped_sales_list = list(grouped_sales.values())
 
-    # Total impayés
-    total_unpaid = total_ca - paid_ca
+    # Total impayés : somme des soldes restants sur les ventes actives de la période
+    # (évite les valeurs négatives dues aux paiements d'anciennes dettes)
+    total_unpaid = sum(
+        max(s.remaining_balance, Decimal("0.00"))
+        for s in active_sales.prefetch_related("payments")
+    )
 
     # Total dépenses de la période
     from accounting.models import Expense
@@ -400,7 +404,7 @@ def sale_detail(request, pk):
             phone = "228" + phone[1:]
         if phone:
             whatsapp_url = f"https://wa.me/{phone}?text={encoded_text}"
-            whatsapp_client_url = f"https://wa.me/{phone}?text={urllib.parse.quote('Bonjour, veuillez trouver ci-joint votre facture AquaTogo n°' + str(sale.pk).zfill(4) + '.')}"
+            whatsapp_client_url = f"https://wa.me/{phone}?text={urllib.parse.quote('Bonjour ' + sale.client.name + ', veuillez trouver ci-joint votre facture AquaTogo n°' + str(sale.pk).zfill(4) + '.')}"
 
     return render(request, "sales/detail.html", {
         "sale": sale,

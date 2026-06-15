@@ -174,7 +174,7 @@
             {% endif %}
             {# Appel WhatsApp #}
             {% if ex.client.phone %}
-            <a href="https://wa.me/{{ ex.client.phone|cut:' '|cut:'+'|cut:'-' }}"
+            <a href="https://wa.me/{{ ex.client.phone|cut:' '|cut:'+'|cut:'-' }}?text=Bonjour%20{{ ex.client.name|urlencode }}%2C%20nous%20passons%20aujourd%27hui%20pour%20votre%20prestation%20%C2%AB%20{{ ex.service.name|urlencode }}%20%C2%BB.%20%C3%80%20tr%C3%A8s%20bient%C3%B4t%20!%20%E2%80%94%20AquaTogo%20%F0%9F%90%9F"
                target="_blank"
                rel="noopener noreferrer"
                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-green-50 hover:border-green-200 hover:text-green-700 transition-colors">
@@ -272,7 +272,7 @@
           </button>
         </form>
         {% if task.client.phone %}
-        <a href="https://wa.me/{{ task.client.phone|cut:' '|cut:'+'|cut:'-' }}"
+        <a href="https://wa.me/{{ task.client.phone|cut:' '|cut:'+'|cut:'-' }}?text=Bonjour%20{{ task.client.name|urlencode }}%2C%20nous%20vous%20contactons%20au%20sujet%20de%20%C2%AB%20{{ task.title|urlencode }}%20%C2%BB.%20%C3%80%20tr%C3%A8s%20bient%C3%B4t%20!%20%E2%80%94%20AquaTogo%20%F0%9F%90%9F"
            target="_blank" rel="noopener noreferrer"
            class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-green-50 hover:border-green-200 hover:text-green-700 transition-colors">
           <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
