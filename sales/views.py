@@ -57,6 +57,11 @@ def sale_list(request):
     if start is not None:
         base_qs = base_qs.filter(sale_date__gte=start, sale_date__lte=end)
 
+    # Recherche par client
+    search_query = request.GET.get("q", "").strip()
+    if search_query:
+        base_qs = base_qs.filter(client__name__icontains=search_query)
+
     # Pagination (25 par page)
     paginator = Paginator(base_qs, 25)
     page = paginator.get_page(request.GET.get("page", 1))
@@ -172,14 +177,8 @@ def sale_list(request):
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
 
-    # Capital en caisse (cumul tous temps)
-    all_time_cash_in = Payment.objects.aggregate(
-        total=Coalesce(Sum("amount"), _zero, output_field=_df)
-    )["total"]
-    all_time_cash_out = Expense.objects.aggregate(
-        total=Coalesce(Sum("amount"), _zero, output_field=_df)
-    )["total"]
-    capital_actuel = all_time_cash_in - all_time_cash_out
+    # Capital en caisse (encaissé − dépenses sur la période sélectionnée)
+    capital_actuel = paid_ca - total_expenses
 
     return render(request, "sales/list.html", {
         "sales": sales,
@@ -199,6 +198,7 @@ def sale_list(request):
         "total_unpaid": total_unpaid,
         "total_expenses": total_expenses,
         "capital_actuel": capital_actuel,
+        "search_query": search_query,
     })
 
 
@@ -1080,6 +1080,9 @@ def sale_invoice_pdf(request, pk):
     filename = f"Facture_AquaTogo_{sale.pk:04d}_{sale.sale_date.strftime('%Y%m%d')}.pdf"
     response = HttpResponse(buffer, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
     return response
 
 

@@ -757,11 +757,9 @@ def execution_complete(request, pk):
                 else:
                     next_exec_date = execution.next_due_date
 
-                next_start_tour = None
-                if execution.start_tour and execution.tours_per_month:
-                    next_start_tour = (execution.start_tour % execution.tours_per_month) + 1
+                tours = execution.tours_per_month or 1
 
-                # Créer automatiquement une vente (impayée) pour le prochain tour
+                # Créer une vente couvrant le cycle complet (tous les tours)
                 from sales.models import Sale, SaleItem
 
                 with transaction.atomic():
@@ -773,28 +771,48 @@ def execution_complete(request, pk):
                     sale_item = SaleItem.objects.create(
                         sale=sale,
                         service=execution.service,
-                        quantity=1,
+                        quantity=tours,
                         unit_price=execution.service.price,
                         purchase_price_snapshot=Decimal("0.00"),
                     )
                     sale.recompute_totals()
 
-                    new_exec = ServiceExecution.objects.create(
+                    # Premier tour du nouveau cycle (Tour 1)
+                    first_exec = ServiceExecution.objects.create(
                         client=execution.client,
                         service=execution.service,
                         sale_item=sale_item,
                         tours_per_month=execution.tours_per_month,
                         execution_date=next_exec_date,
                         next_due_date=next_exec_date,
-                        start_tour=next_start_tour,
+                        start_tour=1,
                     )
 
-                tour_label = f" (Tour {next_start_tour})" if next_start_tour else ""
+                    # Tours suivants du cycle (Tour 2, 3, ...)
+                    if tours > 1:
+                        prev_date = next_exec_date
+                        for i in range(1, tours):
+                            raw_date = prev_date + timedelta(days=interval)
+                            offset = (next_exec_date.weekday() - raw_date.weekday()) % 7
+                            child_date = raw_date + timedelta(days=offset)
+                            prev_date = child_date
+                            child_tour = i + 1
+                            ServiceExecution.objects.create(
+                                client=execution.client,
+                                service=execution.service,
+                                tours_per_month=execution.tours_per_month,
+                                execution_date=child_date,
+                                next_due_date=child_date,
+                                parent_execution=first_exec,
+                                start_tour=child_tour,
+                            )
+
+                total_price = execution.service.price * tours
                 messages.success(
                     request,
                     f"Prestation « {execution.service.name} » pour {execution.client.name} effectuée. "
-                    f"Prochain passage{tour_label} planifié le {next_exec_date.strftime('%d/%m/%Y')} "
-                    f"— vente de {execution.service.price:,.0f} FCFA enregistrée (impayée)."
+                    f"Nouveau cycle ({tours} tour{'s' if tours > 1 else ''}) planifié à partir du {next_exec_date.strftime('%d/%m/%Y')} "
+                    f"— vente de {total_price:,.0f} FCFA enregistrée (impayée).",
                 )
             else:
                 messages.success(
@@ -911,6 +929,45 @@ def execution_remove(request, pk):
     messages.success(
         request,
         f"« {service_name} »{tour_label} pour {client_name} retiré du programme.",
+    )
+
+    next_url = request.POST.get("next", "")
+    if next_url:
+        return redirect(next_url)
+    return redirect("services:execution_list")
+
+
+@login_required
+@require_POST
+def execution_reschedule(request, pk):
+    """Reporter une exécution à une nouvelle date."""
+    execution = get_object_or_404(
+        ServiceExecution.objects.select_related("client", "service"),
+        pk=pk,
+    )
+
+    if execution.is_completed:
+        messages.error(request, "Cette prestation est déjà effectuée.")
+        next_url = request.POST.get("next", "")
+        return redirect(next_url or "services:execution_list")
+
+    raw_date = request.POST.get("new_date", "").strip()
+    try:
+        new_date = _date.fromisoformat(raw_date)
+    except (ValueError, TypeError):
+        messages.error(request, "Date invalide.")
+        next_url = request.POST.get("next", "")
+        return redirect(next_url or "services:execution_list")
+
+    old_date = execution.next_due_date or execution.execution_date
+    execution.execution_date = new_date
+    execution.next_due_date = new_date
+    execution.save(update_fields=["execution_date", "next_due_date"])
+
+    tour_label = f" (Tour {execution.start_tour})" if execution.start_tour else ""
+    messages.success(
+        request,
+        f"Prestation reportée du {old_date.strftime('%d/%m/%Y')} au {new_date.strftime('%d/%m/%Y')}.",
     )
 
     next_url = request.POST.get("next", "")
@@ -1211,6 +1268,9 @@ def execution_invoice(request, pk):
     filename = f"Facture_Prestation_{sale.pk:04d}_{client_name.replace(' ', '_')}_{sale.sale_date.strftime('%Y%m%d')}.pdf"
     response = HttpResponse(buffer, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
     return response
 
 

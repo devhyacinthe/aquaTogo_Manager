@@ -228,7 +228,7 @@
 
            // 2. Télécharge le PDF
            const a = document.createElement('a');
-           a.href = '{% url "sales:invoice_pdf" sale.pk %}';
+           a.href = '{% url "sales:invoice_pdf" sale.pk %}?t=' + Date.now();
            a.download = 'Facture_AquaTogo_{{ sale.pk|stringformat:"04d" }}.pdf';
            document.body.appendChild(a);
            a.click();
@@ -292,7 +292,7 @@
   <div class="space-y-2 pb-4">
     <div class="flex gap-2">
       {% if sale.status != 'canceled' %}
-      <a href="{% url 'sales:invoice_pdf' sale.pk %}"
+      <a href="{% url 'sales:invoice_pdf' sale.pk %}?t={% now 'U' %}"
          class="btn-primary flex items-center gap-2 flex-1 justify-center py-3">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round"
