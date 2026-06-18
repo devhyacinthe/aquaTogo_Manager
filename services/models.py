@@ -105,6 +105,11 @@ class ServiceExecution(models.Model):
         help_text="Numéro de ce tour dans le cycle mensuel (1-4). Null = Tour 1.",
     )
     execution_date = models.DateField()
+    original_execution_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date d'origine avant un éventuel report. Utilisée pour calculer le prochain cycle sans décalage.",
+    )
     next_due_date = models.DateField(
         null=True,
         blank=True,

@@ -750,12 +750,21 @@ def execution_complete(request, pk):
             )
 
             if not has_pending_future and interval:
+                # Utiliser la date d'origine (avant report) pour éviter le décalage
+                # Si la prestation a été reportée, original_execution_date contient
+                # la date planifiée d'origine — on s'en sert pour calculer le prochain cycle
+                base_date = execution.original_execution_date or execution.execution_date
+
                 # Nouveau modèle : next_due_date == execution_date (today = date planifiée)
                 # Ancien modèle : next_due_date = execution_date + interval (prochaine échéance)
                 if execution.next_due_date == execution.execution_date:
-                    next_exec_date = execution.execution_date + timedelta(days=interval)
+                    next_exec_date = base_date + timedelta(days=interval)
                 else:
-                    next_exec_date = execution.next_due_date
+                    # Ancien modèle : recalculer depuis la date d'origine
+                    if execution.original_execution_date:
+                        next_exec_date = execution.original_execution_date + timedelta(days=interval)
+                    else:
+                        next_exec_date = execution.next_due_date
 
                 tours = execution.tours_per_month or 1
 
@@ -960,9 +969,13 @@ def execution_reschedule(request, pk):
         return redirect(next_url or "services:execution_list")
 
     old_date = execution.next_due_date or execution.execution_date
+    # Sauvegarder la date d'origine pour que le calcul du prochain cycle
+    # ne soit pas décalé par le report temporaire
+    if not execution.original_execution_date:
+        execution.original_execution_date = execution.execution_date
     execution.execution_date = new_date
     execution.next_due_date = new_date
-    execution.save(update_fields=["execution_date", "next_due_date"])
+    execution.save(update_fields=["original_execution_date", "execution_date", "next_due_date"])
 
     tour_label = f" (Tour {execution.start_tour})" if execution.start_tour else ""
     messages.success(
