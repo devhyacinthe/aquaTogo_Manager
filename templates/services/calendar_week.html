@@ -89,8 +89,29 @@
 
         {# Prestations #}
         {% for ex in day.executions %}
+        {% if ex.is_rescheduled_ghost %}
+        {# ── Fantôme sur date d'origine (bleu) ── #}
+        <div class="flex items-center justify-between px-4 py-3 gap-3 opacity-60">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="text-xs text-gray-300 shrink-0 w-10">
+              <svg class="h-3.5 w-3.5 text-brand-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-600 truncate">{{ ex.client.name }}</p>
+              <p class="text-xs text-gray-400 truncate">
+                {{ ex.service.name }}{% if ex.tours_per_month %} · <span class="font-semibold">T{{ ex.tour_number }}</span>{% endif %}
+              </p>
+            </div>
+          </div>
+          <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">→ {{ ex.next_due_date|date:"d/m" }}</span>
+        </div>
+        {% else %}
+        {# ── Prestation normale / reportée (violet si reportée) ── #}
         <div class="flex items-center justify-between px-4 py-3 gap-3
-          {% if ex.is_overdue %}bg-red-50/50{% endif %}">
+          {% if ex.is_overdue %}bg-red-50/50
+          {% elif ex.original_execution_date and ex.original_execution_date != ex.next_due_date and not ex.is_completed %}bg-purple-50/50{% endif %}">
           <div class="flex items-center gap-3 min-w-0">
             {% if ex.scheduled_time %}
             <span class="text-xs font-mono text-gray-500 shrink-0 w-10">{{ ex.scheduled_time|time:"H:i" }}</span>
@@ -101,10 +122,16 @@
               <p class="text-sm font-medium text-gray-900 truncate">{{ ex.client.name }}</p>
               <p class="text-xs text-gray-400 truncate">
                 {{ ex.service.name }}{% if ex.tours_per_month %} · <span class="font-semibold text-gray-600">T{{ ex.tour_number }}</span>{% endif %}
+                {% if ex.original_execution_date and ex.original_execution_date != ex.next_due_date and not ex.is_completed %}
+                <span class="text-purple-500 font-medium">· du {{ ex.original_execution_date|date:"d/m" }}</span>
+                {% endif %}
               </p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
+            {% if ex.original_execution_date and ex.original_execution_date != ex.next_due_date and not ex.is_completed %}
+            <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">Reportée</span>
+            {% endif %}
             {% if ex.confirmed %}
             <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
               <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
@@ -122,6 +149,7 @@
             {% if ex.is_overdue %}<span class="badge-red">Retard</span>{% elif ex.is_completed %}<span class="badge-green">Fait</span>{% endif %}
           </div>
         </div>
+        {% endif %}
         {% endfor %}
 
         {# Tâches #}

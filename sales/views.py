@@ -272,20 +272,24 @@ def sale_create(request):
             with transaction.atomic():
                 from services.models import ServiceExecution
 
-                sale = Sale.objects.create(
-                    client=client,
-                    created_by=request.user,
-                    sale_date=date.today(),
-                )
+                # Séparer produits et services dans le panier
+                product_items = [i for i in cart if i.get("type") == "product"]
+                service_items = [i for i in cart if i.get("type") == "service"]
 
-                for item in cart:
-                    item_type = item.get("type")
-                    item_id = item.get("id")
-                    qty = int(item.get("qty", 1))
-                    unit_price = _parse_decimal(item.get("unit_price"))
-                    purchase_price = _parse_decimal(item.get("purchase_price", "0"))
+                sale = None
 
-                    if item_type == "product":
+                # Créer une vente UNIQUEMENT pour les produits
+                if product_items:
+                    sale = Sale.objects.create(
+                        client=client,
+                        created_by=request.user,
+                        sale_date=date.today(),
+                    )
+                    for item in product_items:
+                        item_id = item.get("id")
+                        qty = int(item.get("qty", 1))
+                        unit_price = _parse_decimal(item.get("unit_price"))
+                        purchase_price = _parse_decimal(item.get("purchase_price", "0"))
                         product = Product.objects.select_for_update().get(pk=item_id)
                         SaleItem.objects.create(
                             sale=sale,
@@ -294,71 +298,64 @@ def sale_create(request):
                             unit_price=unit_price,
                             purchase_price_snapshot=purchase_price,
                         )
-                    elif item_type == "service":
-                        service_obj = Service.objects.get(pk=item_id)
-                        tours_per_month_raw = item.get("tours_per_month")
-                        tours_per_month = int(tours_per_month_raw) if tours_per_month_raw else None
-                        start_tour_raw = item.get("start_tour")
-                        start_tour = int(start_tour_raw) if start_tour_raw else 1
-                        # exec_qty = passages à planifier (peut différer de qty si départ en cours de cycle)
-                        exec_qty_raw = item.get("exec_qty")
-                        exec_qty = int(exec_qty_raw) if exec_qty_raw else qty
-                        sale_item = SaleItem.objects.create(
+                    sale.recompute_totals()
+
+                    # Paiement optionnel (uniquement pour les produits)
+                    payment_amount = _parse_decimal(payment_amount_raw)
+                    if payment_amount > Decimal("0.00"):
+                        if payment_amount > sale.total_amount:
+                            payment_amount = sale.total_amount
+                        valid_methods = [m[0] for m in Payment.Method.choices]
+                        if payment_method not in valid_methods:
+                            payment_method = "cash"
+                        Payment.objects.create(
                             sale=sale,
-                            service=service_obj,
-                            quantity=qty,          # quantité facturée (forfait complet)
-                            unit_price=unit_price,
-                            purchase_price_snapshot=Decimal("0.00"),
+                            recorded_by=request.user,
+                            amount=payment_amount,
+                            payment_method=payment_method,
+                            payment_date=date.today(),
                         )
-                        # Premier passage — lié au SaleItem, planifié AUJOURD'HUI
-                        first_exec = ServiceExecution.objects.create(
-                            client=client,
-                            service=service_obj,
-                            sale_item=sale_item,
-                            execution_date=sale.sale_date,
-                            next_due_date=sale.sale_date,  # apparaît dans le calendrier aujourd'hui
-                            tours_per_month=tours_per_month,
-                            start_tour=start_tour,
-                        )
-                        # Passages suivants basés sur exec_qty (tours restants du cycle)
-                        if exec_qty > 1 and tours_per_month:
-                            from datetime import timedelta
-                            interval = first_exec.interval_days() or 0
-                            prev_date = sale.sale_date
-                            for i in range(1, exec_qty):
-                                raw_date = prev_date + timedelta(days=interval)
-                                offset = (sale.sale_date.weekday() - raw_date.weekday()) % 7
-                                child_date = raw_date + timedelta(days=offset)
-                                prev_date = child_date
-                                child_tour = ((start_tour - 1 + i) % tours_per_month) + 1
-                                ServiceExecution.objects.create(
-                                    client=client,
-                                    service=service_obj,
-                                    tours_per_month=tours_per_month,
-                                    execution_date=child_date,
-                                    next_due_date=child_date,  # apparaît dans le calendrier à sa propre date
-                                    parent_execution=first_exec,
-                                    start_tour=child_tour,
-                                )
 
-                sale.recompute_totals()
+                # Créer les ServiceExecution SANS vente
+                # La vente sera créée automatiquement au dernier tour (impayée)
+                for item in service_items:
+                    item_id = item.get("id")
+                    qty = int(item.get("qty", 1))
+                    service_obj = Service.objects.get(pk=item_id)
+                    tours_per_month_raw = item.get("tours_per_month")
+                    tours_per_month = int(tours_per_month_raw) if tours_per_month_raw else None
+                    start_tour_raw = item.get("start_tour")
+                    start_tour = int(start_tour_raw) if start_tour_raw else 1
+                    exec_qty_raw = item.get("exec_qty")
+                    exec_qty = int(exec_qty_raw) if exec_qty_raw else qty
 
-                # Optional immediate payment
-                payment_amount = _parse_decimal(payment_amount_raw)
-                if payment_amount > Decimal("0.00"):
-                    # Cap at total
-                    if payment_amount > sale.total_amount:
-                        payment_amount = sale.total_amount
-                    valid_methods = [m[0] for m in Payment.Method.choices]
-                    if payment_method not in valid_methods:
-                        payment_method = "cash"
-                    Payment.objects.create(
-                        sale=sale,
-                        recorded_by=request.user,
-                        amount=payment_amount,
-                        payment_method=payment_method,
-                        payment_date=date.today(),
+                    first_exec = ServiceExecution.objects.create(
+                        client=client,
+                        service=service_obj,
+                        execution_date=date.today(),
+                        next_due_date=date.today(),
+                        tours_per_month=tours_per_month,
+                        start_tour=start_tour,
                     )
+                    if exec_qty > 1 and tours_per_month:
+                        from datetime import timedelta
+                        interval = first_exec.interval_days() or 0
+                        prev_date = date.today()
+                        for i in range(1, exec_qty):
+                            raw_date = prev_date + timedelta(days=interval)
+                            offset = (date.today().weekday() - raw_date.weekday()) % 7
+                            child_date = raw_date + timedelta(days=offset)
+                            prev_date = child_date
+                            child_tour = ((start_tour - 1 + i) % tours_per_month) + 1
+                            ServiceExecution.objects.create(
+                                client=client,
+                                service=service_obj,
+                                tours_per_month=tours_per_month,
+                                execution_date=child_date,
+                                next_due_date=child_date,
+                                parent_execution=first_exec,
+                                start_tour=child_tour,
+                            )
 
         except ValueError as e:
             return render(request, "sales/create.html", {
@@ -373,7 +370,9 @@ def sale_create(request):
                 "error": f"Erreur lors de la création de la vente : {e}",
             })
 
-        return redirect("sales:detail", pk=sale.pk)
+        if sale:
+            return redirect("sales:detail", pk=sale.pk)
+        return redirect("services:execution_list")
 
     return render(request, "sales/create.html", {
         "products_data": products_data,
@@ -469,6 +468,12 @@ def sale_add_payment(request, pk):
             payment_method=payment_method,
             payment_date=date.today(),
         )
+
+        # Mettre à jour la date de vente au premier paiement
+        # → la facture affichera la date d'encaissement réelle
+        if sale.payments.count() == 1:
+            sale.sale_date = date.today()
+            sale.save(update_fields=["sale_date"])
 
     return redirect("sales:detail", pk=pk)
 
