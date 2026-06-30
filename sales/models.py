@@ -120,21 +120,15 @@ class Sale(models.Model):
 
     @property
     def can_cancel(self) -> bool:
-        if self.status != self.SaleStatus.ACTIVE:
-            return False
-        delay_hours = getattr(settings, "SALE_CANCEL_DELAY_HOURS", 48)
-        return timezone.now() <= self.created_at + timedelta(hours=delay_hours)
+        return self.status == self.SaleStatus.ACTIVE
 
     @property
     def can_modify(self) -> bool:
-        if self.status != self.SaleStatus.ACTIVE:
-            return False
-        delay_hours = getattr(settings, "SALE_MODIFY_DELAY_HOURS", 24)
-        return timezone.now() <= self.created_at + timedelta(hours=delay_hours)
+        return self.status == self.SaleStatus.ACTIVE
 
     def cancel(self, user, reason: str = "") -> None:
         if not self.can_cancel:
-            raise ValueError("Cette vente ne peut plus être annulée (délai dépassé ou déjà annulée).")
+            raise ValueError("Cette vente ne peut pas être annulée (déjà annulée).")
         with transaction.atomic():
             from services.models import ServiceExecution
             for item in self.items.select_related("product").all():

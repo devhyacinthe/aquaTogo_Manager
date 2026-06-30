@@ -93,6 +93,12 @@ def sale_list(request):
         active_filter["sale_date__lte"] = end
     active_sales = Sale.objects.filter(**active_filter)
 
+    # Appliquer le filtre type aux agrégats aussi
+    if sale_type == "product":
+        active_sales = active_sales.filter(items__product__isnull=False).distinct()
+    elif sale_type == "service":
+        active_sales = active_sales.filter(items__service__isnull=False).distinct()
+
     aggregates = active_sales.aggregate(
         total_ca=Sum("total_amount"),
         total_profit=Sum("total_profit"),
@@ -139,7 +145,13 @@ def sale_list(request):
     if start is not None:
         pay_filter["payment_date__gte"] = start
         pay_filter["payment_date__lte"] = end
-    payments_qs = Payment.objects.filter(**pay_filter).annotate(
+    payments_qs = Payment.objects.filter(**pay_filter)
+    # Appliquer le filtre type aux encaissements aussi
+    if sale_type == "product":
+        payments_qs = payments_qs.filter(sale__items__product__isnull=False).distinct()
+    elif sale_type == "service":
+        payments_qs = payments_qs.filter(sale__items__service__isnull=False).distinct()
+    payments_qs = payments_qs.annotate(
         prop_profit=Case(
             When(
                 sale__total_amount__gt=0,
