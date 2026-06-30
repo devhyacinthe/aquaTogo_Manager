@@ -53,7 +53,9 @@ def sale_list(request):
         start = today
         end = today
 
-    base_qs = Sale.objects.select_related("client", "created_by").prefetch_related("items")
+    base_qs = Sale.objects.select_related("client", "created_by").prefetch_related(
+        "items__product", "items__service",
+    )
     if start is not None:
         base_qs = base_qs.filter(sale_date__gte=start, sale_date__lte=end)
 
@@ -61,6 +63,23 @@ def sale_list(request):
     search_query = request.GET.get("q", "").strip()
     if search_query:
         base_qs = base_qs.filter(client__name__icontains=search_query)
+
+    # Filtre par type : produit / prestation / tout
+    sale_type = request.GET.get("type", "all")
+    if sale_type == "product":
+        base_qs = base_qs.filter(items__product__isnull=False).distinct()
+    elif sale_type == "service":
+        base_qs = base_qs.filter(items__service__isnull=False).distinct()
+
+    # Compteurs par type (pour badges dans la tab bar)
+    count_qs = Sale.objects.all()
+    if start is not None:
+        count_qs = count_qs.filter(sale_date__gte=start, sale_date__lte=end)
+    if search_query:
+        count_qs = count_qs.filter(client__name__icontains=search_query)
+    count_all = count_qs.count()
+    count_products = count_qs.filter(items__product__isnull=False).distinct().count()
+    count_services = count_qs.filter(items__service__isnull=False).distinct().count()
 
     # Pagination (25 par page)
     paginator = Paginator(base_qs, 25)
@@ -199,6 +218,10 @@ def sale_list(request):
         "total_expenses": total_expenses,
         "capital_actuel": capital_actuel,
         "search_query": search_query,
+        "sale_type": sale_type,
+        "count_all": count_all,
+        "count_products": count_products,
+        "count_services": count_services,
     })
 
 
@@ -988,89 +1011,71 @@ def sale_invoice_pdf(request, pk):
     story.append(Spacer(1, 0.6 * cm))
 
 
-    # ── Historique des impayés du client ────────────────────────────────────────
-    # Affiché uniquement si le client a d'AUTRES dettes (pas juste la facture en cours)
-    outstanding = Decimal("0")
-    has_other_debts = False
-    if sale.client:
-        has_other_debts = (
-            sale.client.sales
-            .filter(status="active", payment_status__in=["unpaid", "partial"])
-            .exclude(pk=sale.pk)
-            .exists()
-        )
-        if has_other_debts:
-            # Afficher TOUTES les dettes y compris la facture actuelle
-            all_unpaid = list(
-                sale.client.sales
-                .filter(status="active", payment_status__in=["unpaid", "partial"])
-                .prefetch_related("items__product", "items__service", "payments")
-                .order_by("sale_date", "id")
-            )
-            outstanding = sum(s.remaining_balance for s in all_unpaid)
-            if outstanding > 0:
-                story.append(Spacer(1, 0.5 * cm))
-                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))
-                story.append(Spacer(1, 0.3 * cm))
-                story.append(_p(
-                    '<font color="#DC2626"><b>Historique des impayés — Compte client</b></font>',
-                    fontSize=10,
-                ))
-                story.append(Spacer(1, 0.25 * cm))
+    # ── Résumé du solde de cette facture ─────────────────────────────────────────
+    if sale.payment_status in ("unpaid", "partial"):
+        outstanding = sale.remaining_balance
+        if outstanding > 0:
+            story.append(Spacer(1, 0.5 * cm))
+            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#FCA5A5")))
+            story.append(Spacer(1, 0.3 * cm))
+            story.append(_p(
+                '<font color="#DC2626"><b>Solde dû — Cette facture</b></font>',
+                fontSize=10,
+            ))
+            story.append(Spacer(1, 0.25 * cm))
 
-                RED     = colors.HexColor("#DC2626")
-                RED_BG  = colors.HexColor("#FEE2E2")
-                RED_ROW = colors.HexColor("#FFF7F7")
+            RED     = colors.HexColor("#DC2626")
+            RED_BG  = colors.HexColor("#FEE2E2")
 
-                debt_rows = [[
-                    _p("<b>Date</b>",           fontSize=8),
-                    _p("<b>Articles</b>",       fontSize=8),
-                    _p("<b>Montant</b>",        fontSize=8, alignment=TA_RIGHT),
-                    _p("<b>Payé</b>",           fontSize=8, alignment=TA_RIGHT),
-                    _p("<b>Reste dû</b>",       fontSize=8, alignment=TA_RIGHT),
-                ]]
-                for s in all_unpaid:
-                    # Build item details
-                    details_parts = []
-                    for si in s.items.all():
-                        if si.product:
-                            details_parts.append(f"{si.product.name} ×{si.quantity}")
-                        elif si.service:
-                            details_parts.append(f"{si.service.name} ×{si.quantity}")
-                        elif si.label:
-                            details_parts.append(f"{si.label} ×{si.quantity}")
-                    details_text = ", ".join(details_parts) if details_parts else "—"
+            paid = sale.total_amount - sale.remaining_balance
 
-                    paid = s.total_amount - s.remaining_balance
-                    debt_rows.append([
-                        _p(s.sale_date.strftime("%d/%m/%Y"), fontSize=8),
-                        _p(details_text, fontSize=7),
-                        _p(_fmt(s.total_amount), fontSize=8, alignment=TA_RIGHT),
-                        _p(_fmt(paid), fontSize=8, alignment=TA_RIGHT),
-                        _p(f'<font color="#DC2626">{_fmt(s.remaining_balance)}</font>',
-                           fontSize=8, alignment=TA_RIGHT),
-                    ])
-                debt_rows.append([
-                    "", "", "",
-                    _p("<b>TOTAL DÛ</b>", fontSize=9, alignment=TA_RIGHT),
-                    _p(f'<font color="#DC2626"><b>{_fmt(outstanding)} FCFA</b></font>',
-                       fontSize=9, alignment=TA_RIGHT),
-                ])
+            # Build item details
+            details_parts = []
+            for si in sale.items.all():
+                if si.product:
+                    details_parts.append(f"{si.product.name} ×{si.quantity}")
+                elif si.service:
+                    details_parts.append(f"{si.service.name} ×{si.quantity}")
+                elif si.label:
+                    details_parts.append(f"{si.label} ×{si.quantity}")
+            details_text = ", ".join(details_parts) if details_parts else "—"
 
-                dt = Table(debt_rows, colWidths=[2.2*cm, 6.3*cm, 2.5*cm, 2.5*cm, 2*cm])
-                dt.setStyle(TableStyle([
-                    ("BACKGROUND",    (0, 0), (-1, 0),   RED_BG),
-                    ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.HexColor("#991B1B")),
-                    ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, RED_ROW]),
-                    ("BACKGROUND",    (0, -1),(-1, -1),  RED_BG),
-                    ("TOPPADDING",    (0, 0), (-1, -1),  5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
-                    ("LEFTPADDING",   (0, 0), (-1, -1),  6),
-                    ("RIGHTPADDING",  (0, 0), (-1, -1),  6),
-                    ("GRID",          (0, 0), (-1, -1),  0.3, colors.HexColor("#FECACA")),
-                    ("LINEABOVE",     (0, -1),(-1, -1),  1, RED),
-                ]))
-                story.append(dt)
+            debt_rows = [[
+                _p("<b>Date</b>",           fontSize=8),
+                _p("<b>Articles</b>",       fontSize=8),
+                _p("<b>Montant</b>",        fontSize=8, alignment=TA_RIGHT),
+                _p("<b>Payé</b>",           fontSize=8, alignment=TA_RIGHT),
+                _p("<b>Reste dû</b>",       fontSize=8, alignment=TA_RIGHT),
+            ]]
+            debt_rows.append([
+                _p(sale.sale_date.strftime("%d/%m/%Y"), fontSize=8),
+                _p(details_text, fontSize=7),
+                _p(_fmt(sale.total_amount), fontSize=8, alignment=TA_RIGHT),
+                _p(_fmt(paid), fontSize=8, alignment=TA_RIGHT),
+                _p(f'<font color="#DC2626">{_fmt(outstanding)}</font>',
+                   fontSize=8, alignment=TA_RIGHT),
+            ])
+            debt_rows.append([
+                "", "", "",
+                _p("<b>TOTAL DÛ</b>", fontSize=9, alignment=TA_RIGHT),
+                _p(f'<font color="#DC2626"><b>{_fmt(outstanding)} FCFA</b></font>',
+                   fontSize=9, alignment=TA_RIGHT),
+            ])
+
+            dt = Table(debt_rows, colWidths=[2.2*cm, 6.3*cm, 2.5*cm, 2.5*cm, 2*cm])
+            dt.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, 0),   RED_BG),
+                ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.HexColor("#991B1B")),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, colors.HexColor("#FFF7F7")]),
+                ("BACKGROUND",    (0, -1),(-1, -1),  RED_BG),
+                ("TOPPADDING",    (0, 0), (-1, -1),  5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
+                ("LEFTPADDING",   (0, 0), (-1, -1),  6),
+                ("RIGHTPADDING",  (0, 0), (-1, -1),  6),
+                ("GRID",          (0, 0), (-1, -1),  0.3, colors.HexColor("#FECACA")),
+                ("LINEABOVE",     (0, -1),(-1, -1),  1, RED),
+            ]))
+            story.append(dt)
 
     # ── Pied de page ──────────────────────────────────────────────────────────
     story.append(Spacer(1, 1.2 * cm))

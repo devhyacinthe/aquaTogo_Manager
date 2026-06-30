@@ -234,13 +234,24 @@ def expense_export_excel(request):
 
 @login_required
 def accounting_report(request):
-    from sales.models import Payment
+    import json
+    import locale
+    from calendar import monthrange
+    from sales.models import Sale, Payment
 
-    periode = request.GET.get("periode", "all")
+    periode = request.GET.get("periode", "month")
     start, end, periode_label = _period_range(periode)
 
     _zero = Value(Decimal("0.00"))
     _df = DecimalField(max_digits=14, decimal_places=2)
+
+    # ── Formatted month label ────────────────────────────────────────────────
+    MOIS_FR = [
+        "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+    ]
+    today = date.today()
+    month_label = f"{MOIS_FR[today.month]} {today.year}"
 
     # CA et bénéfice basés sur les encaissements (payment_date)
     pay_qs = Payment.objects.all()
@@ -293,6 +304,17 @@ def accounting_report(request):
         for cat in all_cats
     ]
 
+    # ── Total facturé (somme des total_amount des ventes actives de la période) ──
+    invoiced_qs = Sale.objects.filter(status=Sale.SaleStatus.ACTIVE)
+    if start:
+        invoiced_qs = invoiced_qs.filter(sale_date__gte=start, sale_date__lte=end)
+    total_invoiced = invoiced_qs.aggregate(
+        total=Coalesce(Sum("total_amount"), _zero, output_field=_df)
+    )["total"]
+
+    # Total number of orders (active sales in period)
+    order_count = invoiced_qs.count()
+
     expense_qs = Expense.objects.all()
     if start:
         expense_qs = expense_qs.filter(expense_date__gte=start, expense_date__lte=end)
@@ -328,8 +350,7 @@ def accounting_report(request):
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
     # Capital en caisse de la période = encaissements période - dépenses période
-    from sales.models import Payment as _Payment
-    period_cash_in_qs = _Payment.objects.all()
+    period_cash_in_qs = Payment.objects.all()
     period_cash_out_qs = Expense.objects.all()
     if start:
         period_cash_in_qs = period_cash_in_qs.filter(payment_date__gte=start, payment_date__lte=end)
@@ -343,14 +364,58 @@ def accounting_report(request):
     )["total"]
     capital_periode = cash_in_period - cash_out_period
 
+    # Remaining to collect = total invoiced - total collected
+    remaining_to_collect = total_invoiced - cash_in_period
+
     # Capital en caisse total (cumul tous temps)
-    all_time_cash_in = _Payment.objects.aggregate(
+    all_time_cash_in = Payment.objects.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
     all_time_cash_out = Expense.objects.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
     capital_actuel = all_time_cash_in - all_time_cash_out
+
+    # ── Weekly evolution (revenue per week within period) ─────────────────────
+    weekly_labels = []
+    weekly_values = []
+    if start and end:
+        # Compute week boundaries within the period
+        week_num = 1
+        week_start = start
+        while week_start <= end:
+            # End of the week = next Sunday or end of period, whichever comes first
+            days_to_sunday = 6 - week_start.weekday()
+            week_end = min(week_start + timedelta(days=days_to_sunday), end)
+            # Sum payments in this week
+            week_total = Payment.objects.filter(
+                payment_date__gte=week_start,
+                payment_date__lte=week_end,
+            ).aggregate(
+                total=Coalesce(Sum("amount"), _zero, output_field=_df)
+            )["total"]
+            weekly_labels.append(f"Sem. {week_num}")
+            weekly_values.append(int(week_total))
+            week_start = week_end + timedelta(days=1)
+            week_num += 1
+    else:
+        # For "all" period, group by month for recent 6 months
+        for i in range(5, -1, -1):
+            m_date = today.replace(day=1) - timedelta(days=i * 30)
+            m_start = m_date.replace(day=1)
+            _, last_day = monthrange(m_start.year, m_start.month)
+            m_end = m_start.replace(day=last_day)
+            m_total = Payment.objects.filter(
+                payment_date__gte=m_start,
+                payment_date__lte=m_end,
+            ).aggregate(
+                total=Coalesce(Sum("amount"), _zero, output_field=_df)
+            )["total"]
+            weekly_labels.append(MOIS_FR[m_start.month][:3])
+            weekly_values.append(int(m_total))
+
+    # Find max for chart scaling
+    weekly_max = max(weekly_values) if weekly_values else 1
 
     context = {
         "total_ca": total_ca,
@@ -363,20 +428,28 @@ def accounting_report(request):
         "is_profitable": net_profit >= 0,
         "expenses_by_category": expenses_by_category,
         "sale_count": sale_count,
+        "order_count": order_count,
         "expense_count": expense_qs.count(),
         "periode": periode,
         "periode_label": periode_label,
+        "month_label": month_label,
         "rev_products":      rev_products,
         "rev_services":      rev_services,
         "pct_products":      pct_products,
         "pct_services":      pct_services,
         "cat_breakdown_list": cat_breakdown_list,
+        "total_invoiced": total_invoiced,
         "cash_in_period": cash_in_period,
         "cash_out_period": cash_out_period,
+        "remaining_to_collect": remaining_to_collect,
         "capital_periode": capital_periode,
         "capital_periode_positif": capital_periode >= 0,
         "capital_actuel": capital_actuel,
         "capital_positif": capital_actuel >= 0,
+        # Chart data
+        "weekly_labels_json": json.dumps(weekly_labels),
+        "weekly_values_json": json.dumps(weekly_values),
+        "weekly_max": weekly_max,
     }
     return render(request, "accounting/report.html", context)
 
