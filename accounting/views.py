@@ -417,6 +417,100 @@ def accounting_report(request):
     # Find max for chart scaling
     weekly_max = max(weekly_values) if weekly_values else 1
 
+    # ── KPIs avancés ──────────────────────────────────────────────────────────
+
+    # Nombre de jours dans la période
+    if start and end:
+        nb_days = max((end - start).days + 1, 1)
+    else:
+        # "Tout" : du premier paiement à aujourd'hui
+        first_payment = Payment.objects.order_by("payment_date").first()
+        if first_payment:
+            nb_days = max((today - first_payment.payment_date).days + 1, 1)
+        else:
+            nb_days = 1
+
+    avg_daily_revenue = total_ca / nb_days if nb_days > 0 else Decimal("0")
+    avg_ticket = total_ca / order_count if order_count > 0 else Decimal("0")
+    collection_rate = (cash_in_period / total_invoiced * 100) if total_invoiced > 0 else Decimal("0")
+
+    # Clients uniques sur la période
+    unique_clients = invoiced_qs.values("client").distinct().count()
+
+    # ── CA mensuel & annuel (référence) ───────────────────────────────────
+    month_start = today.replace(day=1)
+    _, last_day_of_month = monthrange(today.year, today.month)
+    month_end = today.replace(day=last_day_of_month)
+    ca_mensuel = Sale.objects.filter(
+        status=Sale.SaleStatus.ACTIVE,
+        sale_date__gte=month_start,
+        sale_date__lte=month_end,
+    ).aggregate(total=Coalesce(Sum("total_amount"), _zero, output_field=_df))["total"]
+
+    year_start = today.replace(month=1, day=1)
+    ca_annuel = Sale.objects.filter(
+        status=Sale.SaleStatus.ACTIVE,
+        sale_date__gte=year_start,
+        sale_date__lte=today,
+    ).aggregate(total=Coalesce(Sum("total_amount"), _zero, output_field=_df))["total"]
+
+    # ── Tableau détaillé par semaine ──────────────────────────────────────
+    weekly_detail = []
+    if start and end:
+        week_num = 1
+        week_start = start
+        while week_start <= end:
+            days_to_sunday = 6 - week_start.weekday()
+            week_end = min(week_start + timedelta(days=days_to_sunday), end)
+
+            w_payments = Payment.objects.filter(
+                payment_date__gte=week_start,
+                payment_date__lte=week_end,
+            )
+            w_ca = w_payments.aggregate(
+                total=Coalesce(Sum("amount"), _zero, output_field=_df)
+            )["total"]
+            w_orders = Sale.objects.filter(
+                status=Sale.SaleStatus.ACTIVE,
+                sale_date__gte=week_start,
+                sale_date__lte=week_end,
+            ).count()
+            w_expenses = Expense.objects.filter(
+                expense_date__gte=week_start,
+                expense_date__lte=week_end,
+            ).aggregate(
+                total=Coalesce(Sum("amount"), _zero, output_field=_df)
+            )["total"]
+
+            weekly_detail.append({
+                "label": f"Sem. {week_num}",
+                "dates": f"{week_start.strftime('%d/%m')} – {week_end.strftime('%d/%m')}",
+                "ca": w_ca,
+                "orders": w_orders,
+                "avg_ticket": (w_ca / w_orders) if w_orders > 0 else Decimal("0"),
+                "expenses": w_expenses,
+                "solde": w_ca - w_expenses,
+                "solde_positif": (w_ca - w_expenses) >= 0,
+            })
+            week_start = week_end + timedelta(days=1)
+            week_num += 1
+
+    # ── Comparaison avec la période précédente ────────────────────────────
+    prev_ca = Decimal("0")
+    ca_variation = None
+    if start and end:
+        delta = (end - start).days + 1
+        prev_start = start - timedelta(days=delta)
+        prev_end = start - timedelta(days=1)
+        prev_ca = Payment.objects.filter(
+            payment_date__gte=prev_start,
+            payment_date__lte=prev_end,
+        ).aggregate(
+            total=Coalesce(Sum("amount"), _zero, output_field=_df)
+        )["total"]
+        if prev_ca > 0:
+            ca_variation = round(float((cash_in_period - prev_ca) / prev_ca * 100), 1)
+
     context = {
         "total_ca": total_ca,
         "gross_profit": gross_profit,
@@ -450,6 +544,20 @@ def accounting_report(request):
         "weekly_labels_json": json.dumps(weekly_labels),
         "weekly_values_json": json.dumps(weekly_values),
         "weekly_max": weekly_max,
+        # KPIs avancés
+        "nb_days": nb_days,
+        "avg_daily_revenue": avg_daily_revenue,
+        "avg_ticket": avg_ticket,
+        "unique_clients": unique_clients,
+        "collection_rate": collection_rate,
+        "ca_mensuel": ca_mensuel,
+        "ca_annuel": ca_annuel,
+        # Tableau détaillé
+        "weekly_detail": weekly_detail,
+        # Comparaison
+        "ca_variation": ca_variation,
+        "prev_ca": prev_ca,
+        "is_superuser": request.user.is_superuser,
     }
     return render(request, "accounting/report.html", context)
 

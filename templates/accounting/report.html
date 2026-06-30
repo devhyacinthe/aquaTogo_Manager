@@ -106,7 +106,138 @@
     </div>
   </div>
 
-  <!-- ══ 2. ÉVOLUTION DU MOIS (Bar Chart) ════════════════════════════════ -->
+  <!-- ══ 1b. INDICATEURS DE PERFORMANCE ═══════════════════════════════════ -->
+  <div class="card" id="report-kpis">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="text-lg">🎯</span>
+      <h2 class="text-base font-bold text-gray-900">Indicateurs de performance</h2>
+      {% if ca_variation is not None %}
+      <span class="ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold
+        {% if ca_variation >= 0 %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+        {% if ca_variation >= 0 %}↑{% else %}↓{% endif %} {{ ca_variation }}%
+        <span class="font-normal text-gray-400">vs période préc.</span>
+      </span>
+      {% endif %}
+    </div>
+
+    <!-- Mini-cards KPIs 2×3 -->
+    <div class="grid grid-cols-3 gap-2">
+      <!-- Ventes / jour -->
+      <div class="rounded-xl bg-blue-50 px-2.5 py-2.5 text-center">
+        <p class="text-[9px] font-semibold text-blue-500 uppercase tracking-wider">Ventes / jour</p>
+        <p class="text-base font-bold text-blue-700 mt-0.5 leading-tight">{{ avg_daily_revenue|floatformat:0 }}</p>
+        <p class="text-[9px] text-blue-400">FCFA</p>
+      </div>
+      <!-- Panier moyen -->
+      <div class="rounded-xl bg-violet-50 px-2.5 py-2.5 text-center">
+        <p class="text-[9px] font-semibold text-violet-500 uppercase tracking-wider">Panier moy.</p>
+        <p class="text-base font-bold text-violet-700 mt-0.5 leading-tight">{{ avg_ticket|floatformat:0 }}</p>
+        <p class="text-[9px] text-violet-400">FCFA</p>
+      </div>
+      <!-- Clients -->
+      <div class="rounded-xl bg-teal-50 px-2.5 py-2.5 text-center">
+        <p class="text-[9px] font-semibold text-teal-500 uppercase tracking-wider">Clients</p>
+        <p class="text-base font-bold text-teal-700 mt-0.5 leading-tight">{{ unique_clients }}</p>
+        <p class="text-[9px] text-teal-400">uniques</p>
+      </div>
+      <!-- Taux d'encaissement -->
+      <div class="rounded-xl bg-green-50 px-2.5 py-2.5 text-center">
+        <p class="text-[9px] font-semibold text-green-500 uppercase tracking-wider">Encaissement</p>
+        <p class="text-base font-bold {% if collection_rate >= 80 %}text-green-700{% elif collection_rate >= 50 %}text-amber-600{% else %}text-red-600{% endif %} mt-0.5 leading-tight">{{ collection_rate|floatformat:1 }}%</p>
+        <p class="text-[9px] text-green-400">taux</p>
+      </div>
+      <!-- CA mensuel -->
+      <div class="rounded-xl bg-brand-50 px-2.5 py-2.5 text-center">
+        <p class="text-[9px] font-semibold text-brand-500 uppercase tracking-wider">CA mois</p>
+        <p class="text-base font-bold text-brand-700 mt-0.5 leading-tight">{{ ca_mensuel|floatformat:0 }}</p>
+        <p class="text-[9px] text-brand-400">FCFA</p>
+      </div>
+      <!-- CA annuel -->
+      <div class="rounded-xl bg-amber-50 px-2.5 py-2.5 text-center">
+        <p class="text-[9px] font-semibold text-amber-500 uppercase tracking-wider">CA année</p>
+        <p class="text-base font-bold text-amber-700 mt-0.5 leading-tight">{{ ca_annuel|floatformat:0 }}</p>
+        <p class="text-[9px] text-amber-400">FCFA</p>
+      </div>
+    </div>
+
+    <!-- Marge bénéficiaire -->
+    <div class="mt-3 flex items-center gap-3">
+      <div class="flex-1">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-gray-500">Marge bénéficiaire nette</span>
+          <span class="text-xs font-bold {% if profit_margin >= 20 %}text-green-600{% elif profit_margin >= 0 %}text-amber-600{% else %}text-red-600{% endif %}">{{ profit_margin|floatformat:1 }}%</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div class="h-2 rounded-full transition-all duration-700 {% if profit_margin >= 20 %}bg-green-400{% elif profit_margin >= 0 %}bg-amber-400{% else %}bg-red-400{% endif %}"
+               style="width: {{ profit_margin|floatformat:0 }}%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barre encaissement -->
+    <div class="mt-2 flex items-center gap-3">
+      <div class="flex-1">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-gray-500">Taux d'encaissement</span>
+          <span class="text-xs font-bold {% if collection_rate >= 80 %}text-green-600{% elif collection_rate >= 50 %}text-amber-600{% else %}text-red-600{% endif %}">{{ collection_rate|floatformat:1 }}%</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div class="h-2 rounded-full transition-all duration-700 {% if collection_rate >= 80 %}bg-green-400{% elif collection_rate >= 50 %}bg-amber-400{% else %}bg-red-400{% endif %}"
+               style="width: {% if collection_rate > 100 %}100{% else %}{{ collection_rate|floatformat:0 }}{% endif %}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 1c. DÉTAIL PAR SEMAINE (tableau) ═════════════════════════════════ -->
+  {% if weekly_detail %}
+  <div class="card" x-data="{ open: false }" id="report-weekly-table">
+    <button @click="open = !open" class="flex items-center justify-between w-full text-left">
+      <div class="flex items-center gap-2">
+        <span class="text-lg">📅</span>
+        <h2 class="text-base font-bold text-gray-900">Détail par semaine</h2>
+        <span class="text-xs text-gray-400 font-normal ml-1">{{ weekly_detail|length }} semaine{{ weekly_detail|length|pluralize }}</span>
+      </div>
+      <svg class="h-5 w-5 text-gray-400 transition-transform duration-200" :class="open && 'rotate-180'"
+           fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+      </svg>
+    </button>
+
+    <div x-show="open" x-collapse class="mt-4">
+      <div class="overflow-x-auto -mx-5">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="border-b border-gray-200">
+              <th class="text-left py-2 px-3 font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Période</th>
+              <th class="text-right py-2 px-3 font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Encaissé</th>
+              <th class="text-right py-2 px-3 font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Cmd.</th>
+              <th class="text-right py-2 px-3 font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Panier</th>
+              <th class="text-right py-2 px-3 font-semibold text-gray-500 uppercase tracking-wider text-[10px]">Solde</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            {% for w in weekly_detail %}
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="py-2.5 px-3">
+                <span class="font-semibold text-gray-700">{{ w.label }}</span>
+                <span class="block text-[10px] text-gray-400">{{ w.dates }}</span>
+              </td>
+              <td class="py-2.5 px-3 text-right font-semibold text-gray-900 tabular-nums">{{ w.ca|floatformat:0 }}</td>
+              <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ w.orders }}</td>
+              <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ w.avg_ticket|floatformat:0 }}</td>
+              <td class="py-2.5 px-3 text-right font-semibold tabular-nums {% if w.solde_positif %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if w.solde >= 0 %}+{% endif %}{{ w.solde|floatformat:0 }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-[10px] text-gray-400 mt-2 px-3">Panier = encaissé ÷ commandes · Solde = encaissé − dépenses</p>
+    </div>
+  </div>
+  {% endif %}
   <div class="card" id="report-evolution">
     <div class="flex items-center gap-2 mb-4">
       <span class="text-lg">📈</span>
