@@ -330,6 +330,153 @@
   </div>
   {% endif %}
 
+  <!-- ══ 6. LÉGENDE — Comment lire ce rapport ═══════════════════════════ -->
+  <div class="card" x-data="{ open: false }" id="report-legend">
+    <button @click="open = !open" class="flex items-center justify-between w-full text-left">
+      <div class="flex items-center gap-2">
+        <span class="text-lg">📖</span>
+        <h2 class="text-base font-bold text-gray-900">Comment lire ce rapport</h2>
+      </div>
+      <svg class="h-5 w-5 text-gray-400 transition-transform duration-200" :class="open && 'rotate-180'"
+           fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+      </svg>
+    </button>
+
+    <div x-show="open" x-collapse class="mt-4 space-y-5">
+
+      <!-- Résumé du mois -->
+      <div class="space-y-2">
+        <p class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-brand-400"></span>Résumé du mois
+        </p>
+        <div class="space-y-2 pl-3.5 border-l-2 border-gray-100">
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-blue-600">💰 Chiffre d'affaires = {{ total_invoiced|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Total des montants facturés (ventes actives sur la période).</p>
+          </div>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-green-600">💵 Montant encaissé = {{ cash_in_period|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Somme de tous les paiements reçus sur la période (espèces, mobile money, virement).</p>
+          </div>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-amber-600">🧾 Reste à encaisser = {{ remaining_to_collect|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Chiffre d'affaires − Montant encaissé. C'est ce que les clients doivent encore.</p>
+          </div>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-purple-600">📦 Commandes = {{ order_count }}</p>
+            <p class="text-gray-400 mt-0.5">Nombre total de ventes actives (non annulées) sur la période.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bénéfice net -->
+      <div class="space-y-2">
+        <p class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-emerald-400"></span>Bénéfice net
+        </p>
+        <div class="space-y-2 pl-3.5 border-l-2 border-emerald-100">
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-emerald-700">📈 Bénéfice net = {% if net_profit >= 0 %}+{% endif %}{{ net_profit|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Ce qui reste après avoir retiré toutes les charges :</p>
+          </div>
+          <div class="rounded-lg bg-gray-50 p-3 text-xs space-y-1.5 font-mono">
+            <div class="flex justify-between text-gray-700">
+              <span>Encaissé (paiements reçus)</span>
+              <span class="font-semibold">{{ total_ca|floatformat:0 }}</span>
+            </div>
+            <div class="flex justify-between text-red-500">
+              <span>− Coût d'achat des articles vendus</span>
+              <span>−{{ cogs|floatformat:0 }}</span>
+            </div>
+            <div class="flex justify-between text-gray-700 border-t border-gray-200 pt-1.5">
+              <span class="font-semibold">= Bénéfice brut</span>
+              <span class="font-bold">{{ gross_profit|floatformat:0 }}</span>
+            </div>
+            {% if stock_expenses %}
+            <div class="flex justify-between text-red-500">
+              <span>− Achats de stock</span>
+              <span>−{{ stock_expenses|floatformat:0 }}</span>
+            </div>
+            {% endif %}
+            <div class="flex justify-between text-red-500">
+              <span>− Dépenses opérationnelles</span>
+              <span>−{{ total_expenses|floatformat:0 }}</span>
+            </div>
+            <div class="flex justify-between pt-1.5 border-t border-gray-200 {% if is_profitable %}text-emerald-700{% else %}text-red-700{% endif %}">
+              <span class="font-bold">= BÉNÉFICE NET</span>
+              <span class="font-bold">{% if net_profit >= 0 %}+{% endif %}{{ net_profit|floatformat:0 }} FCFA</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Répartition revenus -->
+      <div class="space-y-2">
+        <p class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-cyan-400"></span>Sources de revenus
+        </p>
+        <div class="space-y-2 pl-3.5 border-l-2 border-cyan-100">
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-cyan-600">📦 Ventes de produits = {{ rev_products|floatformat:0 }} FCFA <span class="text-gray-400 font-normal">({{ pct_products }}%)</span></p>
+            <p class="text-gray-400 mt-0.5">Poissons, aquariums, accessoires — tout ce qui est vendu physiquement.</p>
+          </div>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-purple-600">🔧 Prestations de service = {{ rev_services|floatformat:0 }} FCFA <span class="text-gray-400 font-normal">({{ pct_services }}%)</span></p>
+            <p class="text-gray-400 mt-0.5">Entretien, nettoyage, installation — les services facturés aux clients.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dépenses -->
+      <div class="space-y-2">
+        <p class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-red-400"></span>Dépenses
+        </p>
+        <div class="space-y-2 pl-3.5 border-l-2 border-red-100">
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-orange-600">🏪 Achats de stock = {{ stock_expenses|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Achat de marchandise pour réapprovisionner le stock (poissons, aquariums, accessoires).</p>
+          </div>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-red-600">💸 Dépenses opérationnelles = {{ total_expenses|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Transport, matériel/équipement, charges (eau, électricité), et autres frais de fonctionnement.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trésorerie -->
+      <div class="space-y-2">
+        <p class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="inline-block h-2 w-2 rounded-full bg-green-400"></span>Trésorerie & Caisse
+        </p>
+        <div class="space-y-2 pl-3.5 border-l-2 border-green-100">
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold text-green-600">🏦 Solde période = {% if capital_periode >= 0 %}+{% endif %}{{ capital_periode|floatformat:0 }} FCFA</p>
+            <p class="text-gray-400 mt-0.5">Encaissements − Dépenses (toutes catégories) sur la période sélectionnée.</p>
+          </div>
+          <div class="text-xs text-gray-600 leading-relaxed">
+            <p class="font-semibold {% if capital_positif %}text-green-700{% else %}text-red-700{% endif %}">
+              💰 Argent en caisse = {% if capital_actuel >= 0 %}+{% endif %}{{ capital_actuel|floatformat:0 }} FCFA
+            </p>
+            <p class="text-gray-400 mt-0.5">Total encaissé − Total dépensé <strong>depuis le début de l'activité</strong>. C'est l'argent réellement disponible.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Astuce -->
+      <div class="rounded-xl bg-brand-50 border border-brand-100 p-3 flex items-start gap-2">
+        <span class="text-sm mt-0.5">💡</span>
+        <div class="text-xs text-brand-700 leading-relaxed">
+          <p class="font-semibold mb-1">Astuce</p>
+          <p>Le <strong>bénéfice net</strong> peut être positif même si le <strong>reste en caisse</strong> est négatif, car le bénéfice est basé sur les marges de vente tandis que la caisse inclut les achats de stock (investissement).
+          Un stock élevé signifie que l'argent est dans la marchandise, pas perdu.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- ══ ACTIONS ═════════════════════════════════════════════════════════ -->
   <div class="flex gap-3">
     <a href="{% url 'accounting:list' %}?periode={{ periode }}" class="btn-secondary flex-1 justify-center">
