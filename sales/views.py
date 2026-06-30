@@ -198,15 +198,31 @@ def sale_list(request):
         for s in active_sales.prefetch_related("payments")
     )
 
-    # Total dépenses de la période
+    # Total dépenses de la période (filtrées par type)
     from accounting.models import Expense
     expense_filter = {}
     if start is not None:
         expense_filter["expense_date__gte"] = start
         expense_filter["expense_date__lte"] = end
-    total_expenses = Expense.objects.filter(**expense_filter).aggregate(
+    all_expenses_qs = Expense.objects.filter(**expense_filter)
+
+    # Détail : achats de stock vs dépenses opérationnelles
+    stock_expenses = all_expenses_qs.filter(category="stock").aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
+    operational_expenses = all_expenses_qs.exclude(category="stock").aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    # Dépenses affichées selon le filtre type
+    if sale_type == "product":
+        total_expenses = stock_expenses
+    elif sale_type == "service":
+        total_expenses = operational_expenses
+    else:
+        total_expenses = all_expenses_qs.aggregate(
+            total=Coalesce(Sum("amount"), _zero, output_field=_df)
+        )["total"]
 
     # Capital en caisse (encaissé − dépenses sur la période sélectionnée)
     capital_actuel = paid_ca - total_expenses
@@ -228,6 +244,8 @@ def sale_list(request):
         "paid_profit": paid_profit,
         "total_unpaid": total_unpaid,
         "total_expenses": total_expenses,
+        "stock_expenses": stock_expenses,
+        "operational_expenses": operational_expenses,
         "capital_actuel": capital_actuel,
         "search_query": search_query,
         "sale_type": sale_type,
