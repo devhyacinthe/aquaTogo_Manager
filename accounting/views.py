@@ -392,22 +392,33 @@ def accounting_report(request):
     cogs = total_ca - gross_profit
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
-    # Capital en caisse de la période = encaissements période - dépenses période
+    # Capital en caisse de la période
+    # Quand filtré par type, cash_in = total_ca (déjà proportionnel)
+    # cash_out = total_expenses (déjà filtré par type plus haut)
     period_cash_in_qs = Payment.objects.all()
     period_cash_out_qs = Expense.objects.all()
     if start:
         period_cash_in_qs = period_cash_in_qs.filter(payment_date__gte=start, payment_date__lte=end)
         period_cash_out_qs = period_cash_out_qs.filter(expense_date__gte=start, expense_date__lte=end)
 
-    cash_in_period = period_cash_in_qs.aggregate(
+    cash_in_period_all = period_cash_in_qs.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
-    cash_out_period = period_cash_out_qs.aggregate(
+    cash_out_period_all = period_cash_out_qs.aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
+
+    if sale_type in ("product", "service"):
+        # Encaissé filtré = total_ca (proportionnel, déjà calculé)
+        cash_in_period = total_ca
+        cash_out_period = total_expenses
+    else:
+        cash_in_period = cash_in_period_all
+        cash_out_period = cash_out_period_all
+
     capital_periode = cash_in_period - cash_out_period
 
-    # Remaining to collect = total invoiced - total collected
+    # Remaining to collect = total invoiced - proportional cash in
     remaining_to_collect = total_invoiced - cash_in_period
 
     # Capital en caisse total (cumul tous temps)
