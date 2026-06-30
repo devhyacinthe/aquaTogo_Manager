@@ -240,6 +240,7 @@ def accounting_report(request):
     from sales.models import Sale, Payment
 
     periode = request.GET.get("periode", "month")
+    sale_type = request.GET.get("type", "")  # "", "product", "service"
     start, end, periode_label = _period_range(periode)
 
     _zero = Value(Decimal("0.00"))
@@ -268,49 +269,81 @@ def accounting_report(request):
     all_cats = list(ProductCategory.objects.order_by("name"))
     cat_revenues = {cat.slug: Decimal("0.00") for cat in all_cats}
 
-    total_ca     = Decimal("0.00")
-    gross_profit = Decimal("0.00")
+    total_ca_all = Decimal("0.00")
+    gross_profit_all = Decimal("0.00")
     rev_products = Decimal("0.00")
     rev_services = Decimal("0.00")
+    profit_products = Decimal("0.00")
+    profit_services = Decimal("0.00")
     sale_ids = set()
 
     for payment in pay_list:
         sale = payment.sale
-        total_ca += payment.amount
+        total_ca_all += payment.amount
         sale_ids.add(sale.id)
         if sale.total_amount > 0:
             prop = payment.amount / sale.total_amount
-            gross_profit += sale.total_profit * prop
+            gross_profit_all += sale.total_profit * prop
             for item in sale.items.all():
                 if item.product_id and item.product:
                     rev_products += prop * item.line_total
+                    profit_products += prop * item.line_profit
                     cat_slug = item.product.category.slug
                     if cat_slug in cat_revenues:
                         cat_revenues[cat_slug] += prop * item.line_total
                 elif item.service_id:
                     rev_services += prop * item.line_total
+                    profit_services += prop * item.line_profit
+
+    # Appliquer le filtre type au CA et au bénéfice brut
+    if sale_type == "product":
+        total_ca = rev_products
+        gross_profit = profit_products
+    elif sale_type == "service":
+        total_ca = rev_services
+        gross_profit = profit_services
+    else:
+        total_ca = total_ca_all
+        gross_profit = gross_profit_all
 
     sale_count = len(sale_ids)
-    pct_products = int(rev_products / total_ca * 100) if total_ca > 0 else 0
-    pct_services = int(rev_services / total_ca * 100) if total_ca > 0 else 0
+    pct_products = int(rev_products / total_ca_all * 100) if total_ca_all > 0 else 0
+    pct_services = int(rev_services / total_ca_all * 100) if total_ca_all > 0 else 0
 
     cat_breakdown_list = [
         {
             "slug": cat.slug,
             "name": cat.name,
             "revenue": cat_revenues.get(cat.slug, Decimal("0.00")),
-            "pct": round(float(cat_revenues.get(cat.slug, Decimal("0.00")) / total_ca * 100), 1) if total_ca > 0 else 0,
+            "pct": round(float(cat_revenues.get(cat.slug, Decimal("0.00")) / total_ca_all * 100), 1) if total_ca_all > 0 else 0,
         }
         for cat in all_cats
     ]
 
-    # ── Total facturé (somme des total_amount des ventes actives de la période) ──
+    # ── Total facturé (proportionnel par type) ───────────────────────────────
     invoiced_qs = Sale.objects.filter(status=Sale.SaleStatus.ACTIVE)
     if start:
         invoiced_qs = invoiced_qs.filter(sale_date__gte=start, sale_date__lte=end)
-    total_invoiced = invoiced_qs.aggregate(
-        total=Coalesce(Sum("total_amount"), _zero, output_field=_df)
-    )["total"]
+
+    from sales.models import SaleItem
+    inv_items_filter = {"sale__status": Sale.SaleStatus.ACTIVE}
+    if start:
+        inv_items_filter["sale__sale_date__gte"] = start
+        inv_items_filter["sale__sale_date__lte"] = end
+    inv_items = SaleItem.objects.filter(**inv_items_filter)
+
+    if sale_type == "product":
+        total_invoiced = inv_items.filter(product__isnull=False).aggregate(
+            total=Coalesce(Sum("line_total"), _zero, output_field=_df)
+        )["total"]
+    elif sale_type == "service":
+        total_invoiced = inv_items.filter(service__isnull=False).aggregate(
+            total=Coalesce(Sum("line_total"), _zero, output_field=_df)
+        )["total"]
+    else:
+        total_invoiced = invoiced_qs.aggregate(
+            total=Coalesce(Sum("total_amount"), _zero, output_field=_df)
+        )["total"]
 
     # Total number of orders (active sales in period)
     order_count = invoiced_qs.count()
@@ -321,13 +354,23 @@ def accounting_report(request):
 
     operational_qs = expense_qs.exclude(category=Expense.Category.STOCK)
 
-    total_expenses = operational_qs.aggregate(
-        total=Coalesce(Sum("amount"), _zero, output_field=_df)
-    )["total"]
-
     stock_expenses = expense_qs.filter(category=Expense.Category.STOCK).aggregate(
         total=Coalesce(Sum("amount"), _zero, output_field=_df)
     )["total"]
+
+    operational_expenses = operational_qs.aggregate(
+        total=Coalesce(Sum("amount"), _zero, output_field=_df)
+    )["total"]
+
+    # Dépenses selon le filtre type
+    if sale_type == "product":
+        total_expenses = stock_expenses
+    elif sale_type == "service":
+        total_expenses = operational_expenses
+    else:
+        total_expenses = expense_qs.aggregate(
+            total=Coalesce(Sum("amount"), _zero, output_field=_df)
+        )["total"]
 
     # Total toutes catégories (pour l'affichage de la répartition)
     total_all_expenses = expense_qs.aggregate(
@@ -345,7 +388,7 @@ def accounting_report(request):
         row["cat_label"] = category_labels.get(row["category"], row["category"])
         row["pct"] = (row["subtotal"] / total_all_expenses * 100) if total_all_expenses > 0 else Decimal("0")
 
-    net_profit = gross_profit - stock_expenses - total_expenses
+    net_profit = gross_profit - total_expenses
     cogs = total_ca - gross_profit
     profit_margin = (net_profit / total_ca * 100) if total_ca > 0 else Decimal("0")
 
@@ -527,6 +570,7 @@ def accounting_report(request):
         "periode": periode,
         "periode_label": periode_label,
         "month_label": month_label,
+        "sale_type": sale_type,
         "rev_products":      rev_products,
         "rev_services":      rev_services,
         "pct_products":      pct_products,
@@ -540,6 +584,8 @@ def accounting_report(request):
         "capital_periode_positif": capital_periode >= 0,
         "capital_actuel": capital_actuel,
         "capital_positif": capital_actuel >= 0,
+        "stock_expenses": stock_expenses,
+        "operational_expenses": operational_expenses,
         # Chart data
         "weekly_labels_json": json.dumps(weekly_labels),
         "weekly_values_json": json.dumps(weekly_values),

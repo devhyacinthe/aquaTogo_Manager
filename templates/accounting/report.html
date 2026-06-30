@@ -24,25 +24,44 @@
   <!-- ══ PÉRIODE PILLS ════════════════════════════════════════════════════ -->
   <div class="flex gap-2 flex-wrap">
 
-    <a href="?periode=today"
+    <a href="?periode=today{% if sale_type %}&type={{ sale_type }}{% endif %}"
        class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
          {% if periode == 'today' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
       Aujourd'hui
     </a>
-    <a href="?periode=week"
+    <a href="?periode=week{% if sale_type %}&type={{ sale_type }}{% endif %}"
        class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
          {% if periode == 'week' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
       Semaine
     </a>
-    <a href="?periode=month"
+    <a href="?periode=month{% if sale_type %}&type={{ sale_type }}{% endif %}"
        class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
          {% if periode == 'month' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
       Ce mois
     </a>
-    <a href="?periode=all"
+    <a href="?periode=all{% if sale_type %}&type={{ sale_type }}{% endif %}"
        class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors
          {% if periode == 'all' %}bg-brand-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
       Tout
+    </a>
+  </div>
+
+  <!-- ══ FILTRE TYPE (Produits / Prestations / Tout) ═══════════════════ -->
+  <div class="flex rounded-xl bg-gray-100 p-1 gap-1" id="report-type-filter">
+    <a href="?periode={{ periode }}"
+       class="flex-1 text-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-all
+         {% if not sale_type %}bg-white text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+      📊 Tout
+    </a>
+    <a href="?periode={{ periode }}&type=product"
+       class="flex-1 text-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-all
+         {% if sale_type == 'product' %}bg-white text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+      📦 Produits
+    </a>
+    <a href="?periode={{ periode }}&type=service"
+       class="flex-1 text-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-all
+         {% if sale_type == 'service' %}bg-white text-gray-900 shadow-sm{% else %}text-gray-500 hover:text-gray-700{% endif %}">
+      🔧 Prestations
     </a>
   </div>
 
