@@ -86,27 +86,22 @@ def sale_list(request):
     page = paginator.get_page(request.GET.get("page", 1))
     sales = page  # objet Page → itérable + métadonnées de pagination
 
-    # Agrégats financiers : uniquement ventes actives sur la période
+    # ── Agrégats financiers (proportionnels par type) ───────────────────────
+    # Le calcul est proportionnel : si une vente contient 60% produits et
+    # 40% prestations, les paiements et impayés sont répartis à 60/40.
+    # Cela garantit : Encaissé(Produits) + Encaissé(Prestations) = Encaissé(Tout)
+
+    _zero = Value(Decimal("0.00"))
+    _df = DecimalField(max_digits=14, decimal_places=2)
+
+    # Ventes actives sur la période
     active_filter = {"status": Sale.SaleStatus.ACTIVE}
     if start is not None:
         active_filter["sale_date__gte"] = start
         active_filter["sale_date__lte"] = end
     active_sales = Sale.objects.filter(**active_filter)
 
-    # Appliquer le filtre type aux agrégats aussi
-    if sale_type == "product":
-        active_sales = active_sales.filter(items__product__isnull=False).distinct()
-    elif sale_type == "service":
-        active_sales = active_sales.filter(items__service__isnull=False).distinct()
-
-    aggregates = active_sales.aggregate(
-        total_ca=Sum("total_amount"),
-        total_profit=Sum("total_profit"),
-    )
-    total_ca = aggregates["total_ca"] or Decimal("0.00")
-    total_profit = aggregates["total_profit"] or Decimal("0.00")
-
-    # Répartition produits / prestations (ventes actives seulement)
+    # CA et bénéfice par type — basé sur les SaleItems (précis à la ligne)
     items_filter = {"sale__status": Sale.SaleStatus.ACTIVE}
     if start is not None:
         items_filter["sale__sale_date__gte"] = start
@@ -124,7 +119,18 @@ def sale_list(request):
     rev_services = svc_agg["ca"] or Decimal("0.00")
     profit_services = svc_agg["profit"] or Decimal("0.00")
 
-    # Répartition par catégorie
+    # total_ca / total_profit selon le filtre actif
+    if sale_type == "product":
+        total_ca = rev_products
+        total_profit = profit_products
+    elif sale_type == "service":
+        total_ca = rev_services
+        total_profit = profit_services
+    else:
+        total_ca = rev_products + rev_services
+        total_profit = profit_products + profit_services
+
+    # Répartition par catégorie produit
     from products.models import ProductCategory
     cat_breakdown = []
     for cat in ProductCategory.objects.order_by("name"):
@@ -138,38 +144,49 @@ def sale_list(request):
             "profit": agg["profit"] or Decimal("0.00"),
         })
 
-    # Encaissements réels
-    _zero = Value(Decimal("0.00"))
-    _df = DecimalField(max_digits=14, decimal_places=2)
+    # ── Encaissements proportionnels ──────────────────────────────────────
+    # Pour chaque paiement, on calcule la part produits vs prestations
+    # de la vente associée, et on alloue le montant proportionnellement.
     pay_filter = {}
     if start is not None:
         pay_filter["payment_date__gte"] = start
         pay_filter["payment_date__lte"] = end
-    payments_qs = Payment.objects.filter(**pay_filter)
-    # Appliquer le filtre type aux encaissements aussi
-    if sale_type == "product":
-        payments_qs = payments_qs.filter(sale__items__product__isnull=False).distinct()
-    elif sale_type == "service":
-        payments_qs = payments_qs.filter(sale__items__service__isnull=False).distinct()
-    payments_qs = payments_qs.annotate(
-        prop_profit=Case(
-            When(
-                sale__total_amount__gt=0,
-                then=ExpressionWrapper(
-                    F("amount") * F("sale__total_profit") / F("sale__total_amount"),
-                    output_field=_df,
-                ),
-            ),
-            default=_zero,
-            output_field=_df,
-        )
+    payments_list = list(
+        Payment.objects.filter(**pay_filter)
+        .select_related("sale")
+        .prefetch_related("sale__items")
     )
-    paid_agg = payments_qs.aggregate(
-        ca=Coalesce(Sum("amount"), _zero, output_field=_df),
-        profit=Coalesce(Sum("prop_profit"), _zero, output_field=_df),
-    )
-    paid_ca = paid_agg["ca"]
-    paid_profit = paid_agg["profit"]
+
+    paid_ca = Decimal("0.00")
+    paid_profit = Decimal("0.00")
+    paid_ca_all = Decimal("0.00")  # total encaissé (pour réf.)
+
+    for payment in payments_list:
+        sale = payment.sale
+        paid_ca_all += payment.amount
+        if sale.total_amount <= 0:
+            continue
+
+        if sale_type in ("product", "service"):
+            # Calculer la part du type dans cette vente
+            type_total = Decimal("0.00")
+            type_profit = Decimal("0.00")
+            for item in sale.items.all():
+                if sale_type == "product" and item.product_id:
+                    type_total += item.line_total
+                    type_profit += item.line_profit
+                elif sale_type == "service" and item.service_id:
+                    type_total += item.line_total
+                    type_profit += item.line_profit
+
+            if type_total > 0:
+                proportion = type_total / sale.total_amount
+                paid_ca += payment.amount * proportion
+                paid_profit += payment.amount * (type_profit / sale.total_amount)
+        else:
+            paid_ca += payment.amount
+            if sale.total_amount > 0:
+                paid_profit += payment.amount * sale.total_profit / sale.total_amount
 
     # Regrouper les ventes par client pour affichage en cards dépliables
     grouped_sales = OrderedDict()
@@ -191,12 +208,20 @@ def sale_list(request):
             grouped_sales[key]["has_unpaid"] = True
     grouped_sales_list = list(grouped_sales.values())
 
-    # Total impayés : somme des soldes restants sur les ventes actives de la période
-    # (évite les valeurs négatives dues aux paiements d'anciennes dettes)
-    total_unpaid = sum(
-        max(s.remaining_balance, Decimal("0.00"))
-        for s in active_sales.prefetch_related("payments")
-    )
+    # ── Total impayés (proportionnel par type) ────────────────────────────
+    total_unpaid = Decimal("0.00")
+    for s in active_sales.prefetch_related("payments", "items"):
+        remaining = s.remaining_balance
+        if remaining <= 0:
+            continue
+        if sale_type in ("product", "service") and s.total_amount > 0:
+            type_total = sum(
+                i.line_total for i in s.items.all()
+                if (i.product_id if sale_type == "product" else i.service_id)
+            )
+            total_unpaid += remaining * (type_total / s.total_amount)
+        else:
+            total_unpaid += max(remaining, Decimal("0.00"))
 
     # Total dépenses de la période (filtrées par type)
     from accounting.models import Expense
